@@ -1,5 +1,5 @@
 #!/bin/bash
-TUNEDIR=~/temp/music
+TUNEDIR=./tunes/piano/
 tunes=(
   "$TUNEDIR/a.wav"
   "$TUNEDIR/b.wav"
@@ -12,20 +12,21 @@ tunes=(
 
 function play_tune
 {
-  echo "num is $1"
+  echo "Playing ${tunes[$1]}"
 
-  sox ${tunes[$1]} -d &
+  sox -q ${tunes[$1]} -d &
 }
 
 
 while true ; do
   ## get input and run sanity check
-  read digit
+  #read digit
+  read -n 1 digit
   if [[ "$digit" > "7" ]] || [[ "$digit" < "1" ]] ; then
     echo " Invalid input"
     continue;
   fi
-  echo "You selected $digit $(($digit-1))" 
+  #echo "You selected $digit $(($digit-1))" 
   
   play_tune $(($digit-1))
 
