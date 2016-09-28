@@ -36,7 +36,8 @@ comp = Composer();
 try:
   while 1:
     input = readchar.readchar()
-    if (input=='\x03'): break
+    if (input=='\x03'):
+      raise KeyboardInterrupt 
 
     inputNum = str2Num(input).num
     print ("inputNum", inputNum)
@@ -46,4 +47,5 @@ try:
     comp.play(inputNum-1)
 
 except KeyboardInterrupt:
-  pass
+  print ("Exit program")
+  
