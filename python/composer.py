@@ -2,12 +2,21 @@
 
 import pygame
 import time
+import readchar
 
-'''
+#--------------------------------------------
+# str2Num class
+#--------------------------------------------
+class str2Num(object):
+  def __init__(self, value):
+    try:
+      self.num = int(value)
+    except ValueError:
+      self.num = 0
+
 #--------------------------------------------
 # Composer class
 #--------------------------------------------
-'''
 class Composer(object):
   def __init__(self):
     pygame.init()
@@ -18,6 +27,7 @@ class Composer(object):
   def play(self, idx):
     self.sound[idx].play()
 
+
 #--------------------------------------------
 # Composer instance
 #--------------------------------------------
@@ -25,10 +35,15 @@ comp = Composer();
 
 try:
   while 1:
-    input = int(raw_input())
-    if (input > 7 or input < 1 ) :
-      continue
-    comp.play(input-1)
+    input = readchar.readchar()
+    if (input=='\x03'): break
+
+    inputNum = str2Num(input).num
+    print ("inputNum", inputNum)
+
+    if (inputNum > 7 or inputNum < 1 ) : continue
+
+    comp.play(inputNum-1)
 
 except KeyboardInterrupt:
   pass
