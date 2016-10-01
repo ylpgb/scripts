@@ -22,7 +22,8 @@ r_ser = serial.Serial(
   inter_byte_timeout = None
 )
 
-parser = argparse.ArgumentParser(description='Read AT command from config file and process it')
+usage = 'Read AT command from config file and process it. Use - for command from stdin (CTRL+D to exit).'
+parser = argparse.ArgumentParser(description=usage)
 parser.add_argument('cmdfile', nargs='?', type=argparse.FileType('r'), default=sys.stdin,
                     help='config file with AT command')
 parser.add_argument('logfile', nargs='?', type=argparse.FileType('w'), default=sys.stdout,
