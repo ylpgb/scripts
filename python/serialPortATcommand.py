@@ -23,14 +23,16 @@ r_ser = serial.Serial(
 )
 
 parser = argparse.ArgumentParser(description='Read AT command from config file and process it')
-parser.add_argument('infile', nargs='?', type=argparse.FileType('r'), default=sys.stdin,
+parser.add_argument('cmdfile', nargs='?', type=argparse.FileType('r'), default=sys.stdin,
                     help='config file with AT command')
-parser.add_argument('outfile', nargs='?', type=argparse.FileType('w'), default=sys.stdout,
+parser.add_argument('logfile', nargs='?', type=argparse.FileType('w'), default=sys.stdout,
                     help='log file')
 
 args = parser.parse_args()
 
-
+#--------------------------------------------------------
+# ThreadMonitor class
+#--------------------------------------------------------
 class ThreadMonitor(object):
   def __init__(self):
     signal.signal(signal.SIGUSR1, self.signal_handler)
@@ -40,11 +42,14 @@ class ThreadMonitor(object):
     raise KeyboardInterrupt
     return
 
+#--------------------------------------------------------
+# Logger class
+#--------------------------------------------------------
 class Logger(object):
-  def __init__(self, outfile):
-    self.outfile = outfile
+  def __init__(self, logfile):
+    self.logfile = logfile 
     self.start_time = time.time()
-    return
+    print(self.logfile, sys.stdout)
 
   def log(self, string):
     elapsed_time = int( ( time.time() - self.start_time ) * 1000 )
@@ -53,9 +58,14 @@ class Logger(object):
     elapsed_time_sec = str( elapsed_time // 1000 % 60 ).zfill(2)
     elapsed_time_msec = str( elapsed_time % 1000 ).zfill(3)
     time_text = elapsed_time_hour + ':' + elapsed_time_min + ':' + elapsed_time_sec + '.' + elapsed_time_msec
-    self.outfile.write('[' + time_text + '] ' + string)
+    self.logfile.write('[' + time_text + '] ' + string)
+    if(self.logfile != sys.stdout) : print (string)
+    
     return
 
+#--------------------------------------------------------
+# Command class
+#--------------------------------------------------------
 class Command(object):
   def __init__(self, serial_port):
     self.serial_port = serial_port
@@ -78,13 +88,16 @@ class Command(object):
 
   def cmd(self, cmdString):
     self.cmdString = cmdString[:len(cmdString)-1]+'\r\n'
-    #print ("Send cmd ", self.cmdString)
+    print ("Send cmd ", self.cmdString)
     self.serial_port.write( self.cmdString )
 
+#--------------------------------------------------------
+# Sender class
+#--------------------------------------------------------
 class Sender(object):
-  def __init__(self, serial_port, infile):
+  def __init__(self, serial_port, cmdfile):
     self.serial_port = serial_port
-    self.infile = infile
+    self.cmdfile = cmdfile 
     self.start_time = time.time()
     self.command = Command(self.serial_port)
     self.stop_flag = False
@@ -101,7 +114,7 @@ class Sender(object):
     self.command.at_mode()
 
     while not self.stop_flag:
-      cmdString = self.infile.readline()
+      cmdString = self.cmdfile.readline()
       if (len(cmdString) > 1) : self.command.cmd(cmdString)
       if (len(cmdString) == 0) : 
         print("Command completed!!!")
@@ -110,6 +123,9 @@ class Sender(object):
       time.sleep(0.2)
     return
       
+#--------------------------------------------------------
+# Receiver class
+#--------------------------------------------------------
 class Receiver(object):
   def __init__(self, serial_port, logger):
     self.serial_port = serial_port
@@ -136,10 +152,10 @@ class Receiver(object):
 threadMonitor = ThreadMonitor()
 
 # Create receiver instance
-receiver = Receiver(r_ser, Logger(args.outfile))
+receiver = Receiver(r_ser, Logger(args.logfile))
 
 # Create sender instance
-sender = Sender(r_ser, args.infile)
+sender = Sender(r_ser, args.cmdfile)
 
 try:
   while 1:
