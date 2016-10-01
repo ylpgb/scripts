@@ -5,14 +5,8 @@ import time
 import threading
 import sys
 import argparse
-
-parser = argparse.ArgumentParser(description='Read AT command from config file and process it')
-parser.add_argument('infile', nargs='?', type=argparse.FileType('r'), default=sys.stdin,
-                    help='config file with AT command')
-parser.add_argument('outfile', nargs='?', type=argparse.FileType('w'), default=sys.stdout,
-                    help='log file')
-
-args = parser.parse_args()
+import signal
+import os
 
 r_ser = serial.Serial(
   port = "/dev/ttyUSB1",
@@ -28,7 +22,25 @@ r_ser = serial.Serial(
   inter_byte_timeout = None
 )
 
-class Log(object):
+parser = argparse.ArgumentParser(description='Read AT command from config file and process it')
+parser.add_argument('infile', nargs='?', type=argparse.FileType('r'), default=sys.stdin,
+                    help='config file with AT command')
+parser.add_argument('outfile', nargs='?', type=argparse.FileType('w'), default=sys.stdout,
+                    help='log file')
+
+args = parser.parse_args()
+
+
+class ThreadMonitor(object):
+  def __init__(self):
+    signal.signal(signal.SIGUSR1, self.signal_handler)
+    return
+
+  def signal_handler(self, signal, frame):
+    raise KeyboardInterrupt
+    return
+
+class Logger(object):
   def __init__(self, outfile):
     self.outfile = outfile
     self.start_time = time.time()
@@ -53,22 +65,20 @@ class Command(object):
     raise NotImplementedError
 
   def at_mode(self):
-    print ("Setting AT command mode")
     time.sleep(1)
     self.serial_port.write( b'+++\n' )
     time.sleep(1)
-    print ("Setting AT command mode done")
+    print ("AT command mode")
     return
 
   def data_mode(self):
-    print ("Setting data command mode")
     self.serial_port.write( b'ATO1\r\n' )
-    print ("Setting data command mode done")
+    print ("Data mode")
     return
 
   def cmd(self, cmdString):
     self.cmdString = cmdString[:len(cmdString)-1]+'\r\n'
-    print ("Send cmd ", self.cmdString)
+    #print ("Send cmd ", self.cmdString)
     self.serial_port.write( self.cmdString )
 
 class Sender(object):
@@ -87,7 +97,7 @@ class Sender(object):
     return
   
   def run(self):
-    print("Sender start")
+    print("If AT command from stdin, use CTRL+D to exit")
     self.command.at_mode()
 
     while not self.stop_flag:
@@ -95,6 +105,7 @@ class Sender(object):
       if (len(cmdString) > 1) : self.command.cmd(cmdString)
       if (len(cmdString) == 0) : 
         print("Command completed!!!")
+        os.kill(os.getpid(), signal.SIGUSR1)
         break 
       time.sleep(0.2)
     return
@@ -113,7 +124,6 @@ class Receiver(object):
     return
 
   def run(self):
-    print("Receiver start")
     while ((not self.stop_flag)) :
       if( self.serial_port.in_waiting > 0) :
         self.buf = self.serial_port.read(self.serial_port.in_waiting)
@@ -122,11 +132,14 @@ class Receiver(object):
       time.sleep(0.01)
     return
 
-# Create sender instance
-sender = Sender(r_ser, args.infile)
+# Create threadmonitor instance
+threadMonitor = ThreadMonitor()
 
 # Create receiver instance
-receiver = Receiver(r_ser, Log(args.outfile))
+receiver = Receiver(r_ser, Logger(args.outfile))
+
+# Create sender instance
+sender = Sender(r_ser, args.infile)
 
 try:
   while 1:
