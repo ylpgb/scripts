@@ -8,7 +8,7 @@ import pygame
 import sys
 
 rx_ser = serial.Serial(
-  port = "/dev/ttyUSB1",
+  port = "COM9",
   baudrate = 3000000,
   bytesize = serial.EIGHTBITS,
   parity = serial.PARITY_NONE,
@@ -33,13 +33,10 @@ class Receiver(object):
     self.serial_port = serial_port
     self.dumpFile = dumpFile 
     self.stop_flag = False
-    self.totalReadSize = 0
-    #pygame.init()
-    #pygame.mixer.pre_init(frequency=8000, size=-16, channels=2, buffer=4096)
-    #pygame.mixer.init()
-    #self.sound = pygame.mixer.Sound(self.dumpFile)
     self.thread = threading.Thread(target = self.run)
     self.thread.start()
+    #self.thread2 = threading.Thread(target = self.play)
+    #self.thread2.start()
     return
 
   def stop(self):
@@ -47,19 +44,29 @@ class Receiver(object):
     return
 
   def run(self):
-    print("Receiver start")
+    #print("Receiver start")
     while not self.stop_flag:
       if( self.serial_port.in_waiting > 0) :
         self.buf = self.serial_port.read(self.serial_port.in_waiting)
         args.dumpFile.write(self.buf)
-        self.totalReadSize += len(self.buf)
-
-      if(self.totalReadSize>0):
-        #self.sound = pygame.mixer.Sound(file=self.dumpFile)
-        #self.sound.play()
-        pass
+        args.dumpFile.flush()
 
       time.sleep(0.01)
+    return
+
+  def play(self):
+    time.sleep(5)
+    #print("Play start")
+    self.voiceFile = open(self.dumpFile.name, 'rb')
+    pygame.init()
+    pygame.mixer.pre_init(frequency=44100, size=-16, channels=2,buffer=1024)
+    pygame.mixer.init()
+    while True:
+      self.voiceBuf = self.voiceFile.read(1024*1024)
+      if(len(self.voiceBuf)==0): break
+      self.sound = pygame.mixer.Sound(buffer=buffer(self.voiceBuf, 44, len(self.voiceBuf)))
+      self.sound.play()
+      time.sleep(5)
     return
 
 receiver = Receiver(rx_ser, args.dumpFile)

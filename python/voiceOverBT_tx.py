@@ -7,7 +7,7 @@ import argparse
 import sys
 
 tx_ser = serial.Serial(
-  port = "/dev/ttyUSB0",
+  port = "COM8",
   baudrate = 3000000,
   bytesize = serial.EIGHTBITS,
   parity = serial.PARITY_NONE,
