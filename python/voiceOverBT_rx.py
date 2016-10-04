@@ -4,8 +4,9 @@ import serial
 import time
 import threading
 import argparse
-import pygame
 import sys
+import pyaudio
+import wave 
 
 rx_ser = serial.Serial(
   port = "COM9",
@@ -35,8 +36,8 @@ class Receiver(object):
     self.stop_flag = False
     self.thread = threading.Thread(target = self.run)
     self.thread.start()
-    #self.thread2 = threading.Thread(target = self.play)
-    #self.thread2.start()
+    self.thread2 = threading.Thread(target = self.play)
+    self.thread2.start()
     return
 
   def stop(self):
@@ -44,7 +45,7 @@ class Receiver(object):
     return
 
   def run(self):
-    #print("Receiver start")
+    print("Receiver start")
     while not self.stop_flag:
       if( self.serial_port.in_waiting > 0) :
         self.buf = self.serial_port.read(self.serial_port.in_waiting)
@@ -56,17 +57,23 @@ class Receiver(object):
 
   def play(self):
     time.sleep(5)
-    #print("Play start")
-    self.voiceFile = open(self.dumpFile.name, 'rb')
-    pygame.init()
-    pygame.mixer.pre_init(frequency=44100, size=-16, channels=2,buffer=1024)
-    pygame.mixer.init()
-    while True:
-      self.voiceBuf = self.voiceFile.read(1024*1024)
-      if(len(self.voiceBuf)==0): break
-      self.sound = pygame.mixer.Sound(buffer=buffer(self.voiceBuf, 44, len(self.voiceBuf)))
-      self.sound.play()
-      time.sleep(5)
+    self.chunk = 128
+    print("Play start")
+    self.wf = wave.open(self.dumpFile.name, 'rb')
+    self.p = pyaudio.PyAudio()
+    stream = self.p.open(
+       format = self.p.get_format_from_width(self.wf.getsampwidth()),
+       channels = self.wf.getnchannels(),
+       rate = self.wf.getframerate(),
+       output = True)
+    self.data = self.wf.readframes(self.chunk)
+
+    while self.data!='' and (not self.stop_flag):
+      stream.write(self.data)
+      self.data = self.wf.readframes(self.chunk)
+
+    stream.close()
+    self.p.terminate()
     return
 
 receiver = Receiver(rx_ser, args.dumpFile)
