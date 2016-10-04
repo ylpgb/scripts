@@ -56,21 +56,34 @@ class Receiver(object):
     return
 
   def play(self):
-    time.sleep(5)
     self.chunk = 128
     print("Play start")
-    self.wf = wave.open(self.dumpFile.name, 'rb')
+    self.wfOpened = False
+    while not self.wfOpened:
+      try:
+        self.wf = wave.open(self.dumpFile.name, 'rb')
+        self.wfOpened = True
+      except EOFError:
+        print("Insufficient data. Wait for 1 sec")
+        time.sleep(1)
+        continue
+      
     self.p = pyaudio.PyAudio()
     stream = self.p.open(
        format = self.p.get_format_from_width(self.wf.getsampwidth()),
        channels = self.wf.getnchannels(),
        rate = self.wf.getframerate(),
        output = True)
-    self.data = self.wf.readframes(self.chunk)
+    
+    while (not self.stop_flag):
+      try:
+        self.data = self.wf.readframes(self.chunk)
+      except EOFError:
+        print("Insufficient data. Wait for 1 sec")
+        time.sleep(1)
 
-    while self.data!='' and (not self.stop_flag):
-      stream.write(self.data)
-      self.data = self.wf.readframes(self.chunk)
+      if(len(self.data)!=0):
+        stream.write(self.data)
 
     stream.close()
     self.p.terminate()
