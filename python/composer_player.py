@@ -57,10 +57,10 @@ try:
       continue
 
     inputNum = str2Num(input[0]).num
-    print ("inputNum", inputNum)
 
     if (inputNum > 7 or inputNum < 1 ) : continue
 
+    print ("inputNum", inputNum)
     comp.play(inputNum-1)
 
 except KeyboardInterrupt:
