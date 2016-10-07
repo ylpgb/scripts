@@ -9,7 +9,7 @@ import signal
 import os
 
 r_ser = serial.Serial(
-  port = "/dev/ttyUSB1",
+  port = "/dev/ttyUSB0",
   baudrate = 3000000,
   bytesize = serial.EIGHTBITS,
   parity = serial.PARITY_NONE,
@@ -77,7 +77,10 @@ class Command(object):
 
   def at_mode(self):
     time.sleep(1)
-    self.serial_port.write( b'+++\n' )
+    #self.serial_port.write( b'+++\n' )
+    self.serial_port.write( '+' )
+    self.serial_port.write( '+' )
+    self.serial_port.write( '+' )
     time.sleep(1)
     print ("AT command mode")
     return
@@ -88,6 +91,9 @@ class Command(object):
     return
 
   def cmd(self, cmdString):
+    if(cmdString[:len(cmdString)-1] == "at_mode" ): self.at_mode()
+    if(cmdString[:len(cmdString)-1] == "data_mode" ): self.data_mode()
+
     self.cmdString = cmdString[:len(cmdString)-1]+'\r\n'
     print ("Send cmd ", self.cmdString)
     self.serial_port.write( self.cmdString )
