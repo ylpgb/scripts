@@ -34,4 +34,4 @@ class ItemStore(object):
 
 if __name__ == '__main__':
     store = ItemStore()
-    store.app.run('localhost', 8007)
+    store.app.run('', 8007)
