@@ -1,9 +1,10 @@
 #!/usr/bin/env python
 
+from klein import Klein
+import copy
 import json
 
-from klein import Klein
-
+bufferSize=(1024*64)
 
 class ItemStore(object):
     app = Klein()
@@ -21,14 +22,20 @@ class ItemStore(object):
     def save_item(self, request, name):
         request.setHeader('Content-Type', 'application/plain')
         body = request.content.read()
+
 	#print("name ", name, "body ", body)
-        self._items[name] = body
-        return json.dumps({'success': True})
+        if( len(self._items.get(name, "")) < bufferSize) :
+              self._items[name] = self._items.get(name, "") + body
+	else :
+              self._items[name] = body
+        return ("success")
 
     @app.route('/<string:name>', methods=['GET'])
     def get_item(self, request, name):
-        request.setHeader('Content-Type', 'application/json')
-        return json.dumps(self._items.get(name))
+        request.setHeader('Content-Type', 'application/plain')
+	self.dup = copy.deepcopy(self._items.get(name))
+	self._items[name] = ""
+        return (self.dup)
 
 
 if __name__ == '__main__':
