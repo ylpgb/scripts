@@ -5,6 +5,7 @@ from datetime import timedelta
 import urllib2
 import time
 import re
+import logging
 
 hostname = "http://ubloxsingapore.asuscomm.com:4004/latencytest"
 #hostname = "http://10.122.253.32:8007/latencytest"
@@ -12,6 +13,13 @@ count = 3600 * 24
 pretag = "Timestamp :"
 posttag = "; "
 timeformat = "%Y-%m-%d %H-%M-%S-%f"
+
+logger = logging.getLogger('rover')
+hdlr = logging.FileHandler('latency_rover.log')
+formatter = logging.Formatter('%(asctime)s %(levelname)s %(message)s')
+hdlr.setFormatter(formatter)
+logger.addHandler(hdlr)
+logger.setLevel(logging.INFO)
 
 for ite in range(1, count):
    time.sleep(0.2)
@@ -36,8 +44,9 @@ for ite in range(1, count):
    except AttributeError:
       ptime = ctime
 
-   latency_ms = ctime - ptime
+   latency_ms = int((ctime - ptime).total_seconds() * 1000)
    #print (ctime, ptime)
-   print str(int(latency_ms.total_seconds() * 1000)) + "ms"
+   print str(latency_ms) + "ms"
+   logger.info(str(latency_ms) + "ms")
    
 
