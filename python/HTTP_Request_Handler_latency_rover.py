@@ -14,12 +14,10 @@ pretag = "Timestamp :"
 posttag = "; "
 timeformat = "%Y-%m-%d %H-%M-%S-%f"
 
-logger = logging.getLogger('rover')
-hdlr = logging.FileHandler('latency_rover.log')
-formatter = logging.Formatter('%(asctime)s %(levelname)s %(message)s')
-hdlr.setFormatter(formatter)
-logger.addHandler(hdlr)
-logger.setLevel(logging.INFO)
+logging.basicConfig(level=logging.DEBUG,
+                    format='%(asctime)s %(levelname)s %(message)s',
+                    filename='latency_rover.log',
+                    filemode='w')
 
 for ite in range(1, count):
    time.sleep(0.2)
@@ -47,6 +45,13 @@ for ite in range(1, count):
    latency_ms = int((ctime - ptime).total_seconds() * 1000)
    #print (ctime, ptime)
    print str(latency_ms) + "ms"
-   logger.info(str(latency_ms) + "ms")
+   if (latency_ms > 5000 ) :
+      logging.error(str(latency_ms) + "ms")
+   elif (latency_ms > 2000) :
+      logging.warning(str(latency_ms) + "ms")
+   elif (latency_ms > 1000) :
+      logging.info(str(latency_ms) + "ms")
+   else:
+      logging.debug(str(latency_ms) + "ms")
    
 
