@@ -1,8 +1,8 @@
 #!/usr/bin/env python
 
 from datetime import datetime
-from datetime import timedelta
 import urllib2
+import httplib
 import time
 import re
 import logging
@@ -20,13 +20,35 @@ logging.basicConfig(level=logging.DEBUG,
                     filemode='w')
 
 for ite in range(1, count):
-   time.sleep(0.2)
+   time.sleep(1)
    ctime = datetime.now()
-   request = urllib2.Request(hostname)
-   response = urllib2.urlopen(request)
-   content = response.read()
-   response.close()
-   #print content
+   try:
+      request = urllib2.Request(hostname)
+      response = urllib2.urlopen(request)
+      code = response.getcode()
+      content = response.read()
+      if (code == 200):
+         #print content
+         response.close()
+      elif (code == 304):
+         print "No data on the server"
+         continue
+      else:
+         print "GET returned: " + str(code)
+         continue
+   except urllib2.HTTPError, e:
+      print 'HTTPError = ' + str(e.code)
+      break;
+   except urllib2.URLError, e:
+      print 'URLError = ' + str(e.reason)
+      break;
+   except httplib.HTTPException, e:
+      print 'HTTPException'
+      break;
+   except Exception, e:
+      print 'generic exception: ',e
+      break;
+
    try:
       ### match the last time stamp
       #pattern = '.*' + pretag + '(.+?)' + posttag + '$';
