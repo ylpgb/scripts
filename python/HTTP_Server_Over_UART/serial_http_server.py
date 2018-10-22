@@ -8,7 +8,7 @@ ROOT_SERVER_PATH = r'.'
 ROOT_INDEX = 'index.html'
 SOFTAP_SSID = "UBXWifi"
 SOFTAP_PASSWORD = "topsecret"
-HTTP_URL = "http://192.168.2.1:8080"
+HTTP_URL = "http://192.168.2.1:8080/setup.html"
 
 MAX_READ_LENGTH  = 65000
 
@@ -74,7 +74,7 @@ def atCommand(command):
         cmdComplete=False
         if(command == "+++"):
             return
-            
+        
         while(cmdComplete==False):
             while(s.inWaiting()):
                 result = s.read(s.inWaiting())
@@ -82,7 +82,10 @@ def atCommand(command):
                 if( (result.find('OK')!=-1) or (result.find('ERROR')!=-1)):
                     cmdComplete=True
                 else:
-                    sleep(0.05)
+                    # prevent MCU hogging
+                    time.sleep(0.05)
+            # prevent MCU hogging
+            time.sleep(0.05)
         #while(s.inWaiting()):
         #    result = s.read(s.inWaiting())
         #    print result
