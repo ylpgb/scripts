@@ -35,6 +35,12 @@ HTTP_CREDENTIAL = "<html>\r\n"+\
                   "</body>\r\n"+\
                   "</html>"
 
+HTTP_REQUEST_HEADER = "GET / HTTP/1.0\r\n"+\
+                      "Host: %s\r\n"+\
+                      "Accept: image/gif, image/jpeg, */*\r\n"+\
+                      "Accept-Language: en-us\r\n"+\
+                      "User-Agent: Mozilla/4.0 (compatible; MSIE 6.0; Windows NT 5.1)\r\n\r\n"
+                      
 SSID_QUERY_KEY = "SSID"
 PASSWORD_QUERY_KEY = "psw"
                   
@@ -129,6 +135,24 @@ def setupAP():
     atCommand("AT+UWAPCA=0,3\r\n")
     dataMode()
 
+def sendHttpRequest(url):
+    global s
+    commandMode()
+    atCommand("AT+UDCP=tcp://"+url+":80\r\n")
+    dataMode()
+    time.sleep(1)
+    header = HTTP_REQUEST_HEADER % (url)
+    
+    # write http request data to client 
+    s.write(header)
+    response = ""
+    buffer = ""
+    time.sleep(2)
+    while(s.inWaiting()):
+        buffer = s.read(s.inWaiting())
+        response += buffer
+    print "Response for " + url + " is:\r\n" + response
+    
 def connectToAP(SSID,pwd):
     commandMode()
     atCommand("AT+UWAPCA=0,4\r\n")
@@ -151,6 +175,7 @@ def connectToAP(SSID,pwd):
     atCommand("AT+UNSTAT\r\n")
     atCommand("AT+UWSSTAT\r\n")
     dataMode()
+    sendHttpRequest("www.baidu.com")
 
 def checkNetworkStatus():
     commandMode()
@@ -263,7 +288,8 @@ try:
     
     # set machine mode of the module
     setupAP()
-
+    #connectToAP("iPhone-ylp", "ubloxublox")
+    
     print "Serial HTTP Server Ready ..."
     print "Connect your computer to the Wi-Fi network: %s" % SOFTAP_SSID
     print "Wi-Fi password is: %s" % SOFTAP_PASSWORD
