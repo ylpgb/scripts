@@ -9,7 +9,7 @@ import signal
 import os
 
 r_ser = serial.Serial(
-  port = 'COM21',
+  port = 'COM6',
   baudrate = 115200,
   bytesize = serial.EIGHTBITS,
   parity = serial.PARITY_NONE,
@@ -58,7 +58,10 @@ class Logger(object):
     elapsed_time_sec = str( elapsed_time // 1000 % 60 ).zfill(2)
     elapsed_time_msec = str( elapsed_time % 1000 ).zfill(3)
     time_text = elapsed_time_hour + ':' + elapsed_time_min + ':' + elapsed_time_sec + '.' + elapsed_time_msec
-    self.logfile.write('[' + time_text + '] ' + string)
+    if(isinstance(string, str)): 
+       self.logfile.write('[' + time_text + '] ' + string)
+    else:
+       self.logfile.write('[' + time_text + '] ' + string.decode('utf-8'))
     if(self.logfile != sys.stdout) : print (string)
     
     return
@@ -76,10 +79,10 @@ class Command(object):
 
   def at_mode(self):
     time.sleep(1)
-    #self.serial_port.write( b'+++\n' )
-    self.serial_port.write( '+' )
-    self.serial_port.write( '+' )
-    self.serial_port.write( '+' )
+    self.serial_port.write( b'+++' )
+    #self.serial_port.write( '+' )
+    #self.serial_port.write( '+' )
+    #self.serial_port.write( '+' )
     time.sleep(1)
     print ("AT command mode")
     return
@@ -101,15 +104,17 @@ class Command(object):
     else:
        self.cmdString = cmdString[:len(cmdString)-1]+'\r\n'
        print ("Send cmd ", self.cmdString)
-       self.serial_port.write( self.cmdString )
+       print ("Send encoded cmd ", self.cmdString.encode('utf-8'))
+       self.serial_port.write( self.cmdString.encode('utf-8') )
 
 #--------------------------------------------------------
 # Sender class
 #--------------------------------------------------------
 class Sender(object):
-  def __init__(self, serial_port, cmdfile):
+  def __init__(self, serial_port, cmdfile, logger):
     self.serial_port = serial_port
     self.cmdfile = cmdfile 
+    self.logger = logger
     self.start_time = time.time()
     self.command = Command(self.serial_port)
     self.stop_flag = False
@@ -124,12 +129,14 @@ class Sender(object):
   def run(self):
     print("If AT command from stdin, use CTRL+D to exit")
     ##self.command.at_mode()
+    count=0
 
     while not self.stop_flag:
       cmdString = self.cmdfile.readline()
       if (len(cmdString) > 1) : self.command.cmd(cmdString)
       if (len(cmdString) == 0) : 
-        print("Command completed!!! Starting over...")
+        count+=1
+        self.logger.log("Command completed!!! Starting over..." + str(count))
         self.cmdfile.seek(0)
         #os.kill(os.getpid(), signal.SIGUSR1)
         #break 
@@ -168,7 +175,7 @@ threadMonitor = ThreadMonitor()
 receiver = Receiver(r_ser, Logger(args.logfile))
 
 # Create sender instance
-sender = Sender(r_ser, args.cmdfile)
+sender = Sender(r_ser, args.cmdfile, Logger(args.logfile))
 
 try:
   while 1:
