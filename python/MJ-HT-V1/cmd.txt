@@ -1,0 +1,8 @@
+AT+UBTACLC=4C65A8DA6CA5p
+wait
+wait
+wait
+AT+UBTGWC=0,16,1
+wait
+wait
+wait
