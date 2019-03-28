@@ -85,6 +85,12 @@ class Commander(object):
 # event class
 #--------------------------------------------------
 class Event():
+  class BLE_ROLE_TYPE:
+    DISABLED = 0
+    CENTRAL = 1
+    PERIPHERAL = 2
+    CENTRAL_AND_PERIPHERAL = 3
+    
   class EVENT_TYPE:
     UNKNOWN = 0
     STARTUP = 1
@@ -93,6 +99,8 @@ class Event():
     GATT_ACL_CONNECTED = 4
     GATT_ACL_DISCONNECTED = 5
     GATT_NOTIFICATION = 6
+    BLE_ROLE = 7
+    BLE_DISCOVER = 8
     
   def __init__( self ):
     return
@@ -128,9 +136,38 @@ class GATTNotificationEvent( Event ):
       print(bytes.fromhex(self.payload).decode('utf-8'))
     except:
       pass
-
+      
   def get_event_type( self ):
     return Event.EVENT_TYPE.GATT_NOTIFICATION
+    
+class BLERoleEvent( Event ):
+  def __init__( self, payload ):
+    pos = payload.rfind(':')
+    role = payload[pos+1:]
+    #print("role:", role)
+    self.ble_role = int(role)
+
+  def get_event_type( self ):
+    return Event.EVENT_TYPE.BLE_ROLE
+    
+  def get_ble_role( self ):
+    return self.ble_role
+
+class BLEDiscoverEvent( Event ):
+  def __init__( self, payload ):
+    token_list = payload.split(',')
+    pos = token_list[0].find(':')
+    self.bd_addr = token_list[0][pos+1:]
+    self.name = token_list[2].strip('"')
+
+  def get_event_type( self ):
+    return Event.EVENT_TYPE.BLE_DISCOVER
+    
+  def get_name( self ):
+    return self.name
+  
+  def get_bd_addr( self ):
+    return self.bd_addr
     
 #--------------------------------------------------------
 # Parser class
@@ -138,38 +175,29 @@ class GATTNotificationEvent( Event ):
 class Parser(object):
   def __init__(self):
     self.cmd_event_queue = queue.Queue(maxsize=50)
-    self.status_event_queue = queue.Queue(50)
+    self.status_event_queue = queue.Queue(100)
     self.status_event_queue.put(StartupEvent())
   
   def process_serial_data(self, buf):
     logger.log(buf)
     buf = buf.strip();
     #print("event: ", buf)
-    if(buf.startswith('OK')):
-      try:
-        self.cmd_event_queue.put(CMDOkEvent())
-      except queue.Full:
-        pass
+    if(buf.startswith('+STARTUP')):
+      self.status_event_queue.put(StartupEvent())
+    elif(buf.startswith('OK')):
+      self.cmd_event_queue.put(CMDOkEvent())
     elif(buf.startswith('ERROR')):
-      try:
-        self.cmd_event_queue.put(CMDErrorEvent())
-      except queue.Full:
-        pass
+      self.cmd_event_queue.put(CMDErrorEvent())
     elif(buf.startswith('+UUBTACLC:')):
-      try:
-        self.status_event_queue.put(GATTACLConnectedEvent())
-      except queue.Full:
-        pass
+      self.status_event_queue.put(GATTACLConnectedEvent())
     elif(buf.startswith('+UUBTACLD:')):
-      try:
-        self.status_event_queue.put(GATTACLDisconnectedEvent())
-      except queue.Full:
-        pass
+      self.status_event_queue.put(GATTACLDisconnectedEvent())
     elif(buf.startswith('+UUBTGN:')):
-      try:
-        self.status_event_queue.put(GATTNotificationEvent(buf))
-      except queue.Full:
-        pass
+      self.status_event_queue.put(GATTNotificationEvent(buf))
+    elif(buf.startswith('+UBTLE:')):
+      self.status_event_queue.put(BLERoleEvent(buf))
+    elif(buf.startswith('+UBTD:')):
+      self.status_event_queue.put(BLEDiscoverEvent(buf))
     elif(buf.startswith('AT') or buf.startswith('at') or buf == ''):
       pass
     else:
@@ -195,9 +223,10 @@ class Sender(object):
     while not self.stop_flag:
       cmdString = commander.get_command()
       if(cmdString!=''):
+        ## wait as a way to add delay
         if(cmdString.find('wait') != -1):
           time.sleep(1)
-          continue
+          continue     
           
         self.serial_port.write(cmdString.encode('utf-8'))
         try:
@@ -249,10 +278,33 @@ class Controller():
   def state_wait_startup( self, event ):
     event_type = event.get_event_type()
     if event_type == Event.EVENT_TYPE.STARTUP:
-      commander.cmd('AT+UBTACLC=4C65A8DA6CA5p')
-      return self.state_wait_gatt_connect_result
+      commander.cmd('AT+UBTLE?')
+      return self.state_wait_ble_role_result
     return self.state_wait_startup
 
+  def state_wait_ble_role_result( self, event ):
+    event_type = event.get_event_type()
+    if event_type == Event.EVENT_TYPE.BLE_ROLE:
+      if(event.get_ble_role() == Event.BLE_ROLE_TYPE.CENTRAL ):
+        commander.cmd('AT+UBTD=4,1')
+        return self.state_wait_ble_discover_result
+      else:
+        commander.cmd('AT+UBTLE=1')
+        commander.cmd('AT&W')
+        commander.cmd('AT+CPWROFF')
+        return self.state_wait_startup
+    return self.state_wait_ble_role_result
+    
+  def state_wait_ble_discover_result( self, event ):
+    event_type = event.get_event_type()
+    if event_type == Event.EVENT_TYPE.BLE_DISCOVER:
+      if event.get_name().find('MJ_HT') != -1 :
+        controller.sensor_bd_addr = event.get_bd_addr()
+        cmdString = "AT+UBTACLC=" + controller.sensor_bd_addr
+        commander.cmd(cmdString)
+        return self.state_wait_gatt_connect_result
+    return self.state_wait_ble_discover_result
+    
   def state_wait_gatt_connect_result( self, event ):
     event_type = event.get_event_type()
     if event_type == Event.EVENT_TYPE.GATT_ACL_CONNECTED:
@@ -263,7 +315,8 @@ class Controller():
   def state_wait_gatt_notification_result( self, event ):
     event_type = event.get_event_type()
     if event_type == Event.EVENT_TYPE.GATT_ACL_DISCONNECTED:
-      commander.cmd('AT+UBTACLC=4C65A8DA6CA5p')
+      cmdString = "AT+UBTACLC=" + controller.sensor_bd_addr
+      commander.cmd(cmdString)
       return self.state_wait_gatt_connect_result
     return self.state_wait_gatt_notification_result
     
@@ -275,6 +328,7 @@ class Controller():
     self.serial_port = serial_port
     self.parser = Parser();
     self.stop_flag = False
+    self.sensor_bd_addr = ''
     self.state_func = self.state_wait_startup
     self.thread = threading.Thread( target = self.run )
     self.thread.setDaemon( True )
