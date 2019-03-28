@@ -49,24 +49,39 @@ class Logger(object):
 class Commander(object):
   def __init__(self, cmdfile):
     self.cmdfile = cmdfile
+    self.cmd_queue = queue.Queue(maxsize=50)
+    self.stop_flag = False
+    self.thread = threading.Thread(target = self.run)
+    self.thread.start()
+    return
+  
+  def stop(self):
+    self.stop_flag = True
     return
 
   def cmd(self, cmdString):
     self.cmdString = cmdString.rstrip()+'\r\n'
-    return(self.cmdString)
+    try:
+      #print("cmdString", self.cmdString)
+      self.cmd_queue.put(self.cmdString, block=True)
+    except queue.Full:
+      pass
 
   def get_command(self):
-    while 1:
-        #try:
+    cmdString = self.cmd_queue.get(block=True)
+    return (cmdString)
+
+  def run(self):
+    while not self.stop_flag:
         cmdString = self.cmdfile.readline()
         if(cmdString != ''):
           self.cmd(cmdString)
-          return (self.cmdString)
         else:
           self.cmdfile.seek(0)
           continue
-      
-
+          
+        time.sleep(0.1)
+  
 #--------------------------------------------------
 # event class
 #--------------------------------------------------
@@ -233,15 +248,20 @@ class Controller():
   def __init__( self, serial_port):
     self.serial_port = serial_port
     self.parser = Parser();
+    self.stop_flag = False
     self.thread = threading.Thread( target = self.run )
     self.thread.setDaemon( True )
     self.thread.start()
     return
     
+  def stop(self):
+    self.stop_flag = True
+    return
+    
   def run( self ):
     self.receiver = Receiver( self )
     self.sender = Sender( self )
-    while 1:
+    while not self.stop_flag:
       try:
         event = self.parser.status_event_queue.get(block=True, timeout=None)
       except queue.Empty:
@@ -303,5 +323,10 @@ try:
     time.sleep(1)
 except KeyboardInterrupt:
   print("Exiting program")
+  commander.stop()
+  controller.sender.stop()
+  controller.receiver.stop()
+  controller.stop()
+  
 
 
