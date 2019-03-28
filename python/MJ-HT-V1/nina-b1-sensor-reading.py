@@ -26,7 +26,6 @@ class Logger(object):
   def __init__(self, logfile):
     self.logfile = logfile 
     self.start_time = time.time()
-    print(self.logfile, sys.stdout)
 
   def log(self, string):
     elapsed_time = int( ( time.time() - self.start_time ) * 1000 )
@@ -140,10 +139,12 @@ class Parser(object):
   def __init__(self):
     self.cmd_event_queue = queue.Queue(maxsize=50)
     self.status_event_queue = queue.Queue(50)
+    self.status_event_queue.put(StartupEvent())
   
   def process_serial_data(self, buf):
     logger.log(buf)
     buf = buf.strip();
+    #print("event: ", buf)
     if(buf.startswith('OK')):
       try:
         self.cmd_event_queue.put(CMDOkEvent())
@@ -245,10 +246,36 @@ class Receiver(object):
 # controller class
 #--------------------------------------------------
 class Controller():
+  def state_wait_startup( self, event ):
+    event_type = event.get_event_type()
+    if event_type == Event.EVENT_TYPE.STARTUP:
+      commander.cmd('AT+UBTACLC=4C65A8DA6CA5p')
+      return self.state_wait_gatt_connect_result
+    return self.state_wait_startup
+
+  def state_wait_gatt_connect_result( self, event ):
+    event_type = event.get_event_type()
+    if event_type == Event.EVENT_TYPE.GATT_ACL_CONNECTED:
+      commander.cmd('AT+UBTGWC=0,16,1')
+      return self.state_wait_gatt_notification_result
+    return self.state_wait_gatt_connect_result
+    
+  def state_wait_gatt_notification_result( self, event ):
+    event_type = event.get_event_type()
+    if event_type == Event.EVENT_TYPE.GATT_ACL_DISCONNECTED:
+      commander.cmd('AT+UBTACLC=4C65A8DA6CA5p')
+      return self.state_wait_gatt_connect_result
+    return self.state_wait_gatt_notification_result
+    
+  def event_handler( self, event ):
+    self.state_func = self.state_func( event )
+    return
+        
   def __init__( self, serial_port):
     self.serial_port = serial_port
     self.parser = Parser();
     self.stop_flag = False
+    self.state_func = self.state_wait_startup
     self.thread = threading.Thread( target = self.run )
     self.thread.setDaemon( True )
     self.thread.start()
@@ -264,6 +291,7 @@ class Controller():
     while not self.stop_flag:
       try:
         event = self.parser.status_event_queue.get(block=True, timeout=None)
+        self.event_handler(event)
       except queue.Empty:
           pass
     return
