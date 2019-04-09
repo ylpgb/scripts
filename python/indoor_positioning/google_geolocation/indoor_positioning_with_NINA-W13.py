@@ -347,7 +347,7 @@ class Controller():
       response_json = json.loads(position);
       
       val = response_json.get('location', None)
-      if( not val ):
+      if( val ):
         telemetry = {}
         telemetry['lat'] = response_json['location']['lat']
         telemetry['long'] = response_json['location']['lng']
