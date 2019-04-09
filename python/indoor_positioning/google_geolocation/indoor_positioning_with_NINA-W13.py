@@ -39,7 +39,7 @@ class Logger(object):
     if(isinstance(string, str)): 
        self.logfile.write('[' + time_text + '] ' + string)
     else:
-       self.logfile.write('[' + time_text + '] ' + string.decode('utf-8'))
+       self.logfile.write('[' + time_text + '] ' + string.decode('utf-8','ignore'))
 
     return
 
@@ -142,7 +142,7 @@ class GATTNotificationEvent( Event ):
     pos = payload.rfind(',')
     self.payload = payload[pos+1:]
     try:
-      print(bytes.fromhex(self.payload).decode('utf-8'))
+      print(bytes.fromhex(self.payload).decode('utf-8','ignore'))
     except:
       pass
       
@@ -305,7 +305,7 @@ class Receiver(object):
       if(c == b''):
         continue
       if(c != b'\n'):
-        self.buf += c.decode('utf-8')
+        self.buf += c.decode('utf-8','ignore')
       else:
         self.parser.process_serial_data(self.buf)
         self.buf = ''
@@ -340,28 +340,33 @@ class Controller():
     header = {"Content-type": "application/json"}
     conn = http.client.HTTPSConnection(host)
     conn.request("POST", url, json.dumps(geolocation_request), headers=header)
-    position = conn.getresponse().read().decode('utf-8')
+    position = conn.getresponse().read().decode('utf-8', 'ignore')
     print(position)
     
     if( len(tbdevicekey) == 20 ):
       response_json = json.loads(position);
-      telemetry = {}
-      telemetry['lat'] = response_json['location']['lat']
-      telemetry['long'] = response_json['location']['lng']
-      telemetry['accuracy'] = response_json['accuracy']
-      tbhost = "b202-thingsboard.ddns.net"
-      tburl = "/api/v1/" + tbdevicekey + "/telemetry"
-      tbconn = http.client.HTTPConnection(tbhost, 8080)
-      tbconn.request("POST", tburl, json.dumps(telemetry), headers=header)
-      response = tbconn.getresponse().read().decode()
-      print("position uploaded to thingsboard server")
+      
+      val = response_json.get('location', None)
+      if( not val ):
+        telemetry = {}
+        telemetry['lat'] = response_json['location']['lat']
+        telemetry['long'] = response_json['location']['lng']
+        telemetry['accuracy'] = response_json['accuracy']
+        tbhost = "b202-thingsboard.ddns.net"
+        tburl = "/api/v1/" + tbdevicekey + "/telemetry"
+        tbconn = http.client.HTTPConnection(tbhost, 8080)
+        tbconn.request("POST", tburl, json.dumps(telemetry), headers=header)
+        response = tbconn.getresponse().read().decode()
+        print("position uploaded to thingsboard server")
       
   def state_wait_wifi_scan_result( self, event ):
     event_type = event.get_event_type()
     if event_type == Event.EVENT_TYPE.WIFI_SCAN:
-      print("found AP {} {}".format(event.get_bssid(), event.get_ssid()))
       if(event.get_ssid() != ''):
-        self.aplist[event.get_bssid()] = (event.get_bssid(), event.get_rssi(), event.get_ssid())
+        val = self.aplist.get(event.get_bssid(), None)
+        if( not val ):
+          print("found AP {} {}".format(event.get_bssid(), event.get_ssid()))
+          self.aplist[event.get_bssid()] = (event.get_bssid(), event.get_rssi(), event.get_ssid())
       return self.state_wait_wifi_scan_result
     elif event_type == Event.EVENT_TYPE.CMD_COMPLETE:
       print("scan complete")
