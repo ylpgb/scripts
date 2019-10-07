@@ -28,12 +28,4 @@ client.connect(args.ip, args.p, 60)
 
 print("Starting loop...")
 # Avoiding block to custmize publishing
-client.loop_start()    
-time.sleep(1)
-count=1
-while count < 100:
-    print("Send message ", count)
-    client.publish("try-me1", "message {} at {}".format(count,datetime.now()), qos=0, retain=True)
-    count = count+1
-    time.sleep(0.5)
-client.loop_stop()
+client.loop_forever()
