@@ -1,0 +1,69 @@
+
+# Rules section - this defines the rules be which we retrieve supported stats
+[Rules]
+
+# GroupName, Description, StatName, Type, Command, MakeRate, Regexp
+#
+# GroupName    - the logical grouping for the stat
+# Description  - some text describing 
+# StatName     - human readable name for the stat
+# Type         - "cli", "soldebug" or "linux", which is where the Command should be run
+# Command      - the command to execute to get the stat
+# StatType     - "AsIs"    Plot the number in the exact form it was read
+#                "Avg"     Plot decaying average of the number
+#                "Rate"    Plot a computed rate between two reads
+#                "AvgRate" Plot a decaying average of the computed rate
+# Regexp       - a perl regular expression with a single capture group that can extract the stat out of the command output
+# Expression   - a perl mathematical expression to modify the captured values in the regexp
+
+
+# AD Disk Stats
+
+AD Disk Stats, Write rate to external disk,  iostat-write-rate-kBps, linux, iostat -k, Rate, dm-0\s*[\d\.]+\s+[\d\.]+\s+[\d\.]+\s+\d+\s+(\d+)
+AD Disk Stats, Read rate from external disk, iostat-read-rate-kBps,  linux, iostat -k, Rate, dm-0\s*[\d\.]+\s+[\d\.]+\s+[\d\.]+\s+(\d+)\s+
+AD Disk Stats, Avg write rate to external disk,  avg-iostat-write-rate-kBps, linux, iostat -k, AvgRate, dm-0\s*[\d\.]+\s+[\d\.]+\s+[\d\.]+\s+\d+\s+(\d+)
+AD Disk Stats, Avg read rate from external disk, avg-iostat-read-rate-kBps,  linux, iostat -k, AvgRate, dm-0\s*[\d\.]+\s+[\d\.]+\s+[\d\.]+\s+(\d+)\s+
+
+
+# show stats client
+
+Client Stats, Current ingress rate, curr-ingress-rate, cli, show stats client, AsIs, \(msg/sec\)\s*\n.*\nCurrent Rate \(1 sec sample\)\s*(\d+)
+Client Stats, Current egress rate,  curr-egress-rate,  cli, show stats client, AsIs, \(msg/sec\)\s*\n.*\nCurrent Rate \(1 sec sample\)\s*\d+\s*(\d+)
+Client Stats, Average ingress rate, avg-ingress-rate,  cli, show stats client, AsIs, \(msg/sec\)\s*\n.*\n.*\nAvg. Rate \(60 sec interval\)\s*(\d+)
+Client Stats, Average egress rate,  avg-egress-rate,   cli, show stats client, AsIs, \(msg/sec\)\s*\n.*\n.*\nAvg. Rate \(60 sec interval\)\s*\d+\s*(\d+)
+
+
+# show interface
+
+Interface Stats, Lag1 Rx bytes, lag1-rx-bytes, cli, show interface, AsIs, lag1.*\n.*\n.*\n.*\n.*?Rx bytes:\s*(\d+)
+Interface Stats, Lag1 Tx bytes, lag1-tx-bytes, cli, show interface, AsIs, lag1.*\n.*\n.*\n.*\n.*\n.*?Tx bytes:\s*(\d+)
+Interface Stats, Lag1 Rx pkts, lag1-rx-pkts, cli, show interface, AsIs, lag1.*\n.*\n.*\n.*\n.*?Rx pkts:\s*(\d+)
+Interface Stats, Lag1 Tx pkts, lag1-tx-pkts, cli, show interface, AsIs, lag1.*\n.*\n.*\n.*\n.*\n.*?Tx pkts:\s*(\d+)
+
+Interface Stats, Lag1 Rx bytes rate, lag1-rx-bytes-rate, cli, show interface, Rate, lag1.*\n.*\n.*\n.*\n.*?Rx bytes:\s*(\d+)
+Interface Stats, Lag1 Tx bytes rate, lag1-tx-bytes-rate, cli, show interface, Rate, lag1.*\n.*\n.*\n.*\n.*\n.*?Tx bytes:\s*(\d+)
+Interface Stats, Lag1 Rx pkts rate, lag1-rx-pkts-rate, cli, show interface, Rate, lag1.*\n.*\n.*\n.*\n.*?Rx pkts:\s*(\d+)
+Interface Stats, Lag1 Tx pkts rate, lag1-tx-pkts-rate, cli, show interface, Rate, lag1.*\n.*\n.*\n.*\n.*\n.*?Tx pkts:\s*(\d+)
+
+Interface Stats, Lag1 Rx bytes avg rate, avg-lag1-rx-bytes-rate, cli, show interface, AvgRate, lag1.*\n.*\n.*\n.*\n.*?Rx bytes:\s*(\d+)
+Interface Stats, Lag1 Tx bytes avg rate, avg-lag1-tx-bytes-rate, cli, show interface, AvgRate, lag1.*\n.*\n.*\n.*\n.*\n.*?Tx bytes:\s*(\d+)
+Interface Stats, Lag1 Rx pkts avg rate, avg-lag1-rx-pkts-rate, cli, show interface, AvgRate, lag1.*\n.*\n.*\n.*\n.*?Rx pkts:\s*(\d+)
+Interface Stats, Lag1 Tx pkts avg rate, avg-lag1-tx-pkts-rate, cli, show interface, AvgRate, lag1.*\n.*\n.*\n.*\n.*\n.*?Tx pkts:\s*(\d+)
+
+
+# NAB business stats
+
+NAB Usage and Performance, MsgInfoFifo depth, msg-info-fifo-depth, soldebug:lconn 1, msgInfoFifoShow, Avg, numMsgsEnqueued_ms:\s*(\d+).*\n\s*numMsgsDequeued_ms:\s*(\d+), $1-$2 < 0 ? 0 : $1-$2
+
+# Linux CPU and memory usage
+
+Linux Resources, Memory Usage, linux-mem-used-k, cli, show process, AsIs, Mem:.*?(\d+)k used
+Linux Resources, Swap Usage, linux-swap-used-k, cli, show process, AsIs, Swap:.*?(\d+)k used
+
+
+# StatGroups section - this defines sets of stats that are generally useful
+[StatGroups]
+
+client = curr-ingress-rate:{axis:primary}, curr-egress-rate:{axis:primary}, avg-ingress-rate:{axis:primary}, avg-egress-rate:{axis:primary}
+lag1-bytes = lag1-rx-bytes-rate:{axis:primary}, lag1-tx-bytes-rate:{axis:primary}
+lag1-pkts = lag1-rx-pkts-rate:{axis:primary}, lag1-tx-pkts-rate:{axis:primary}

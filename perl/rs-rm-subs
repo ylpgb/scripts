@@ -1,0 +1,27 @@
+#!/usr/bin/env run-router-script
+#
+#  This will remove all subscribers on the box which begin 
+# with the prefix specified
+#
+<%args>
+$sn                  # Prefix string for the subscribers
+</%args>
+
+show subscriber <% $sn %>* 
+
+<%perl>
+
+my ($subs) = ($rrsLastResult =~ /-------\s*(\n(.|\n)*)$/);
+my @names = ($subs =~ /\n([A-Za-z0-9_]+)\s/g);
+
+</%perl>
+
+enable
+con t
+
+% foreach my $sub (@names) {
+no subscriber <% $sub %>
+% }
+
+end
+exit

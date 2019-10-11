@@ -1,0 +1,82 @@
+#!/usr/bin/env run-router-script
+#
+#  This script will add the specified number of bridges 
+#  to the router.
+#
+
+<%args>
+$bn => "b"           # Prefix string for the bridge name
+$vn => "vpn"         # Prefix string for the local VPN
+$vnr => ""           # Prefix string for the remote VPN
+$nvnr => ""          # Prefix string for the new remote VPN
+$bc                  # Number of bridges to modify
+$bs => 1             # Starting bridge number
+$rip                 # IP and port of the remote router (port defaults to 55555)
+$nrip => ""          # New IP and port of the remote router (port defaults to 55555)
+$int                 # Local interface to use for the bridge connections
+$nint => ""          # New local interface to use for the bridge connections
+$q => ""             # Name of remote AD queue
+$qn => ""            # Prefix string for the queue name
+$cu => ""            # Client username for remote bridge
+$cn => ""            # Prefix string for the client-username
+$zf => 1             # Want zero fill names
+$cmp => 0            # Want compression
+$ssl => 0            # Want SSL
+$vnoffset => 0       # Offset in the VPN number for the remote message-vpn
+$nvnoffset => ""     # New Offset in the VPN number for the remote message-vpn
+</%args>
+
+<%perl>
+if ($vnr eq "") {
+  $vnr = $vn;
+} 
+if ($nvnr eq "") {
+  $nvnr = $vn;
+} 
+if ($nrip eq "") {
+  $nrip = $rip;
+} 
+if ($nint eq "") {
+  $nint = $int;
+} 
+if ($nvnoffset eq "") {
+  $nvnoffset = $vnoffset;
+} 
+</%perl>
+
+enable
+con t
+
+% for my $i ($bs .. $bc) {
+
+bridge <% $bn . (($zf) ? sprintf("%05d", $i) : sprintf("%d", $i)) %> message-vpn <% $vn . (($zf) ? sprintf("%05d", $i) : sprintf("%d", $i)) %>
+
+remote message-vpn <% $vnr . (($zf) ? sprintf("%05d", $i + $vnoffset) : sprintf("%d", $i + $vnoffset)) %> connect-via <% $rip %> interface <% $int %>
+shut
+exit
+exit
+no remote message-vpn <% $vnr . (($zf) ? sprintf("%05d", $i + $vnoffset) : sprintf("%d", $i + $vnoffset)) %> connect-via <% $rip %> interface <% $int %>
+
+create remote message-vpn <% $nvnr . (($zf) ? sprintf("%05d", $i + $nvnoffset) : sprintf("%d", $i + $nvnoffset)) %> connect-via <% $nrip %> interface <% $nint %>
+% if ($cn) {
+    client-username <% $cn . (($zf) ? sprintf("%05d", $i + $nvnoffset) : sprintf("%d", $i + $nvnoffset)) %>
+% } elsif ($cu) {
+    client-username <% $cu %>
+% }
+<% ($cmp) ? "compress" : "" %>
+<% ($ssl) ? "ssl" : "" %>
+<% ($q) ? "message-spool queue $q" : "" %>
+% if ($qn) {
+    message-spool queue <% $qn . (($zf) ? sprintf("%05d", $i + $nvnoffset) : sprintf("%d", $i + $nvnoffset)) %>
+% }
+no shut
+exit
+exit
+
+no shut
+exit
+
+% }
+
+end
+exit

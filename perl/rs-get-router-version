@@ -1,0 +1,64 @@
+#!/usr/bin/env run-router-script
+#
+#  Get and return the router's version in the following example hash:
+#  %version = (Full => '1.19b.123',
+#              Major => '1',
+#              Minor => '19',
+#              Load  => '123',
+#              Branch=> 'b',
+#              Mode  => 'TR', # Could be CR, TR or TMA
+#              )
+#
+<%args>
+$normalize => 0  # Convert official load numbers into internal ones (4.3.1 -> 1.17b.xxx)
+</%args>
+
+% RrsSaveShowOutput();
+% RrsShowOutput(0);
+
+<%script type="cli">
+
+show version
+
+% my ($full, $major, $minor, $branch, $load) = ($rrsLastResult =~ /CLI\s+(([0-9]+)\.([0-9]+)([a-zA-Z]*)\.([0-9]+)[\w_\+]*)/);
+% if (!defined $branch) {$branch = ""};
+% # Get the mode
+show client *
+
+% my $mode;
+% if ($rrsLastResult !~ /Client/) { $mode = "CR" }
+% elsif ($rrsLastResult !~ /VPN/) { $mode = "TR" }
+% else { $mode = "TMA" }
+
+<%perl>
+
+# Normalize the load if necessary
+
+my %version = (Full => $full, Major => $major, Minor => $minor, 
+               Load => $load, Branch => $branch, Mode => $mode);
+
+my %norm = ("4.3" => {Full => '1.17b.xxx',
+                      Major => '1',
+                      Minor => '17',
+                      Load  => 'xxx',
+                      Branch=> 'b'},
+            "4.4" => {Full => '1.19.xxx',
+                      Major => '1',
+                      Minor => '19',
+                      Load  => 'xxx',
+                      Branch=> ''},
+);
+
+if ($normalize) {
+  if ($norm{"$version{Major}.$version{Minor}"}) {
+    %version = %{$norm{"$version{Major}.$version{Minor}"}};
+  }
+}
+
+
+RrsRestoreShowOutput();
+return %version;
+
+
+
+</%perl>

@@ -1,0 +1,99 @@
+#!/usr/bin/env run-router-script
+#
+<%args>
+message_vpn        # Name of message-vpn to setup for was/jboss samples.  The was samples use 'was' by default and jboss samples use 'jboss' by default.
+max_spool_usage => 10000  # The maximum spool usage to configure for the message-vpn.
+</%args>
+
+home
+enable
+configure
+create message-vpn <% $message_vpn %>
+authentication user-class client
+basic auth-type none
+exit
+exit
+no shutdown
+exit
+client-profile default message-vpn <% $message_vpn %>
+message-spool
+allow-guaranteed-endpoint-create
+allow-guaranteed-message-receive
+allow-guaranteed-message-send
+allow-transacted-sessions
+exit
+exit
+create client-username solCFCred message-vpn <% $message_vpn %>
+password default
+no shutdown
+exit
+create client-username test message-vpn <% $message_vpn %>
+password secret
+no shutdown
+exit
+create client-username abc message-vpn <% $message_vpn %>
+password abc
+no shutdown
+exit
+message-spool message-vpn <% $message_vpn %>
+max-spool-usage <% $max_spool_usage %>
+create queue solQueue
+permission all consume
+no shutdown
+exit
+create queue solQueueNE
+permission all consume
+access-type non-exclusive
+no shutdown
+exit
+create topic-endpoint solDte
+permission all modify-topic
+no shutdown
+exit
+exit
+jndi message-vpn <% $message_vpn %>
+no shutdown
+create connection-factory sol/jndi/defaultCF
+property-list transport-properties
+property direct-transport false
+property connect-retries 50
+property reconnect-retries 60
+exit
+exit
+create connection-factory sol/jndi/defaultXaCF
+property-list transport-properties
+property direct-transport false
+property connect-retries 50
+property reconnect-retries 60
+exit
+property-list messaging-properties
+property xa true
+exit
+exit
+create queue sol/jndi/solQueue
+property physical-name solQueue
+exit
+create queue sol/jndi/solQueueNotExist
+property physical-name solQueueNotExist
+exit
+create queue sol/jndi/solQueueNE
+property physical-name solQueueNE
+exit
+create topic sol/jndi/solTopic
+property physical-name solTopic
+exit
+create topic sol/jndi/solTopicND
+property physical-name solTopicND
+exit
+exit
+client-username default message-vpn <% $message_vpn %>
+no shutdown
+exit
+client-profile default message-vpn <% $message_vpn %>
+message-spool
+allow-guaranteed-message-send
+allow-guaranteed-message-receive
+allow-transacted-sessions
+exit
+exit
+end

@@ -1,0 +1,384 @@
+#!/usr/bin/env run-router-script
+#
+#  This script will periodically read various stats and 
+#  display them on the screen
+#
+#
+<%args>
+$interval => 1            # Polling interval in seconds
+$mode     => "c"          # Mode to start in (defaults to 'c')
+$router_type => "tma"     # Mode of the router
+$show_all => 0            # Show all the items, one after another
+</%args>
+
+<%perl>
+
+no warnings;
+
+my @validModes = ('all', 'tma', 'solace', 'soltr');
+
+# Keeps track of the toggling of 'detail' being added to select commands
+my $detailFlag = 0;
+my $timestampFlag = 0;
+
+my %cmds = (
+            'c:tma,soltr' => {Help => "show client stats",
+                              HelpOrder => 1,
+                              Type => "cli",
+                              InShowAll => 1,
+                              DetailToggle => 1,
+                              DetailDefault => 0,
+                              Cmd  => "show stats client"},
+            'N:soltr'     => {Help => "show cspf neighbor * stats",
+                              HelpOrder => 2,
+                              Type => "cli",
+                              InShowAll => 1,
+                              DetailToggle => 1,
+                              DetailDefault => 0,
+                              Cmd  => "show cspf neighbor * stats"},
+            'Q:tma,soltr' => {Help => "show client queues",
+                              HelpOrder => 1,
+                              Type => "cli",
+                              InShowAll => 1,
+                              Cmd  => "show client * stats queues"},
+            'c:solace' => {Help => "show dataplane stats",
+                           HelpOrder => 1,
+                           Type => "cli",
+                           InShowAll => 1,
+                           DetailToggle => 1,
+                           DetailDefault => 0,
+                           Cmd  => "show dataplane stats"},
+            'm:solace,soltr' => {Help => "show message-spool",
+                                 HelpOrder => 3,
+                                 Type => "cli",
+                                 DetailToggle => 1,
+                                 DetailDefault => 0,
+                                 Cmd  => "show message-spool"},
+            'M:solace,soltr' => {Help => "show message-spool stats",
+                                 HelpOrder => 4,
+                                 Type => "cli",
+                                 DetailToggle => 1,
+                                 DetailDefault => 0,
+                                 Cmd  => "show message-spool stats"},
+            'r:solace,soltr' => {Help => "show message-spool rates",
+                                 HelpOrder => 4,
+                                 Type => "cli",
+                                 InShowAll => 1,
+                                 Cmd  => "show message-spool rates"},
+            'l:tma,soltr' => {Help => "show client list",
+                              HelpOrder => 3,
+                              Type => "cli",
+                              InShowAll => 1,
+                              Cmd  => "show client *"},
+            'v:soltr' => {Help => "show message-vpn *",
+                              HelpOrder => 5,
+                              Type => "cli",
+                              InShowAll => 1,
+                              Cmd  => "show message-vpn *"},
+            'd:all' => {Help => "show netstat detailed",
+                        HelpOrder => 10,
+                        Type => "soldebug:lconn 1",
+                        InShowAll => 1,
+                        Cmd  => "netstat_detailed"},
+            'n:all' => {Help => "show netstat",
+                        HelpOrder => 9,
+                        Type => "soldebug:lconn 1",
+                        Cmd  => "netstat"},
+            'p:all' => {Help => "show netstat pending count (track data buffer usage)",
+                        HelpOrder => 10,
+                        Type => "soldebug:lconn 1",
+                        InShowAll => 1,
+                        Cmd  => "netstat_pendingCount"},
+            'u:all' => {Help => "show buffer utilization and watermark info",
+                        HelpOrder => 10,
+                        Type => "soldebug:lconn 1",
+                        InShowAll => 1,
+                        Cmd  => "bufs"},
+            'b:all' => {Help => "show egress queues (brief mode - skip unbound queues)",
+                        HelpOrder => 11,
+                        Type => "soldebug:lconn 1",
+                        InShowAll => 1,
+                        Cmd  => "queue_show(1)"},
+            'f:all' => {Help => "show egress queues (full mode - all non-zero queues)",
+                        HelpOrder => 11,
+                        Type => "soldebug:lconn 1",
+                        Cmd  => "queue_show(0)"},
+            't:all' => {Help => "show conn TP handlers",
+                        HelpOrder => 12,
+                        Type => "soldebug:lconn 1",
+                        InShowAll => 1,
+                        Cmd  => "connTpHdlr_show"},
+            'P:all' => {Help => "show POW levels",
+                        HelpOrder => 13,
+                        Type => "linux",
+                        InShowAll => 1,
+                        Cmd  => \&GetPowStats},
+            'x:tma,soltr' => {Help => "clear the client stats",
+                              HelpOrder => 2,
+                              RevertAfterRun => 1, 
+                              Interval => 0.1,  
+                              Type => "cli",
+                              Cmd  => "clear stats client"},
+            'X:solace,soltr' => {Help => "clear the message-spool stats",
+                        HelpOrder => 5,
+                        RevertAfterRun => 1, 
+                        Interval => 0.1,  
+                        Type => "cli",
+                        Cmd  => "clear message-spool stats"},
+            'x:solace' => {Help => "clear the dataplane stats",
+                           HelpOrder => 2,
+                           RevertAfterRun => 1, 
+                           Interval => 0.1,  
+                           Type => "cli",
+                           Cmd  => "clear dataplane stats"},
+            'B:solace' => {Help => "DocProc backpressure status",
+                           HelpOrder => 12,
+                           Type => "soldebug:conn 3",
+                           InShowAll => 1,
+                           Cmd  => "docProcDumpBackpressureStatus"},
+            'I:soltr' => {Help => "Cache instance status",
+                          HelpOrder => 8,
+                          Type => "cli",
+                          InShowAll => 1,
+                          Cmd  => "show cache-instance *"},
+            'D:soltr' => {Help => "Distributed cache status",
+                          HelpOrder => 8,
+                          Type => "cli",
+                          InShowAll => 1,
+                          Cmd  => "show distributed-cache *"},
+            'C:soltr' => {Help => "Cache cluster status",
+                          HelpOrder => 8,
+                          Type => "cli",
+                          InShowAll => 1,
+                          Cmd  => "show cache-cluster *"},
+            'B:soltr' => {Help => "BMB status",
+                          HelpOrder => 8,
+                          Type => "soldebug:lconn 1",
+                          InShowAll => 1,
+                          Cmd  => "backdoorMsgBus_dumpState"},
+            's:soltr' => {Help => "Show SMRP database",
+                          HelpOrder => 8,
+                          Type => "cli",
+                          InShowAll => 1,
+                          DetailToggle => 1,
+                          DetailDefault => 0,
+                          Cmd  => "show smrp database"},
+            'z:all' => {Help => "pause (toggle)",
+                        HelpOrder => 97,
+                        RevertAfterRun => 1,  # Go back to old setting after running once
+                        Interval => 0,  
+                        Cmd  => \&Pause},
+            'L:all' => {Help => "Toggle detail on commands that support it (*L*ots)",
+                        HelpOrder => 97.1,
+                        RevertAfterRun => 1,  # Go back to old setting after running once
+                        Cmd  => sub {$detailFlag ^= 1;} },
+            'T:all' => {Help => "Toggle timestamp between each output",
+                        HelpOrder => 97.2,
+                        RevertAfterRun => 1,  # Go back to old setting after running once
+                        Cmd  => sub {$timestampFlag ^= 1;} },
+            '+:all' => {Help => "speed up 25%",
+                        HelpOrder => 97.5,
+                        RevertAfterRun => 1,  # Go back to old setting after running once
+                        Cmd  => sub {$interval = $interval * 0.75;} },
+            '-:all' => {Help => "slow down 33%",
+                        HelpOrder => 97.6,
+                        RevertAfterRun => 1,  # Go back to old setting after running once
+                        Cmd  => sub {$interval *= 1.3333333; }},
+            'q:all' => {Help => "quit",
+                        HelpOrder => 98,
+                        Cmd  => \&RrsExit},
+            '?:all' => {Help => "show key help",
+                        HelpOrder => 99,
+                        Interval => 999999999,  # Override the default delay with this value (forever)
+                        Cmd  => \&ShowHelp},
+                        
+
+);
+
+
+# Fix the items that have more than one router mode
+ExpandCmds();
+
+ShowHelp();
+
+RrsShowOutput(0);
+RrsSetTimeout(30);
+use Term::ReadKey;
+
+my $enum = 0;
+my $pause = 0;
+
+my %soldebugInsts;
+
+# Get the CLI into enabled mode
+</%perl>
+enable
+<%perl>
+
+if (!defined(GetBestMode($mode))) { print "Invalid starting mode: $mode\n"; RrsExit(); }
+$mode = GetBestMode($mode);
+
+my $lastMode = $mode; 
+
+my @showAllModes = GetAllModes();
+
+while (1) {
+
+  if ($timestampFlag) {
+    my $time = localtime(time());
+    print "TIME: $time\n";
+  }
+  if ($show_all) {
+    print "\n\n####  Running all items at " . localtime() .":\n\n";
+    foreach my $showAllMode (@showAllModes) {
+      RunCommand($showAllMode);
+    } 
+  }
+  else {
+    RunCommand($mode);
+  }
+
+  my $modeInterval = $cmds{$mode}{Interval};
+  if ($cmds{$mode}{RevertAfterRun}) {
+    $mode = $lastMode;
+  }
+
+  ReadMode 4;
+  my $char = ReadKey(defined($modeInterval) ? $modeInterval : $interval);
+  ReadMode 0;
+  if (defined $char) {
+     if (defined(GetBestMode($char))) { 
+       $mode = GetBestMode($char); 
+     }
+     elsif ($char eq "") {
+       last;
+     }
+  }
+  if (!$cmds{$mode}{RevertAfterRun}) {
+    $lastMode = $mode; 
+  }
+
+}
+
+print "Quitting...\n";
+RrsExit();
+
+
+sub ShowHelp {
+
+  print "\n\nHot-keys during execution:\n\n";
+  
+  foreach my $key (sort { if(!defined $cmds{$a}{HelpOrder}) {return -1;} 
+                         elsif (!defined $cmds{$b}{HelpOrder}) { return 1; }
+                         else { $cmds{$a}{HelpOrder} <=> $cmds{$b}{HelpOrder} } } (keys(%cmds))) {
+    my ($keyName, $type) = ($key =~ /^([^:]+):(.*)/);
+    if ($type eq 'all' || $type eq $router_type) {
+      printf("    %5s - $cmds{$key}{Help}".($cmds{$key}{DetailToggle} ? " ('L' to toggle detail)":"")."\n", $keyName);
+    }
+  }
+
+  print "\n\n";
+  
+}
+
+sub GetBestMode {
+  my ($key) = @_;
+
+  foreach my $type ($router_type, 'all') {
+    if (defined $cmds{"$key:$type"}) {
+      return "$key:$type";
+    }
+  }
+  return undef;
+
+}
+
+sub GetAllModes {
+  my @modes;
+  foreach my $mode (keys(%cmds)) {
+    my (undef, $type) = split(/:/, $mode);
+    if ($cmds{$mode}{InShowAll} && ($type eq "all" || $type eq $router_type)) {
+      push(@modes, $mode);
+    }    
+  }
+  return @modes;
+}
+
+sub RunCommand {
+  my ($mode) = @_;
+
+  if (defined $cmds{$mode}{Cmd} && ref($cmds{$mode}{Cmd}) eq "CODE") {
+    &{$cmds{$mode}{Cmd}}();
+    return;
+  }
+  else {
+</%perl>
+%   if ($cmds{$mode}{Type} =~ /soldebug:(.*)/) {
+%     my $inst = $1;
+<% script type="soldebug" instance="$inst" %>
+%     if (!defined($soldebugInsts{$inst})) {
+:<% $inst %> 
+%     }
+%   }
+%   elsif ($cmds{$mode}{Type} =~ /cli/) {
+<% script type="cli" %>
+%   }
+%   elsif ($cmds{$mode}{Type} =~ /linux/) {
+<% script type="linux" %>
+%   }
+% my $cmdText = $cmds{$mode}{Cmd};
+% $cmdText .= " detail" if ($cmds{$mode}{DetailToggle} && $cmds{$mode}{DetailDefault} ^ $detailFlag);
+<% $cmdText %>    
+% }
+<%perl>
+
+  print "$rrsLastResult\n";
+
+}
+
+
+sub Pause {
+
+  print "\nPaused...  Hit any key to resume\n";
+  ReadMode 4;
+  my $char = ReadKey(9999999999);
+  ReadMode 0;
+
+}
+
+sub GetPowStats {
+        
+
+</%perl>
+<% script type="linux" %>
+<%perl>
+
+  print "POW IQ counts:\n";
+  foreach my $iq (0 .. 7) {
+</%perl>
+oct-pci-csr POW_IQ_CNT<% $iq %>
+<%perl>
+    my ($cnt) = ($rrsLastResult =~ /IQ_CNT\s*=\s*(\d+)/);
+    print "  QOS $iq:  $cnt\n";
+  }
+  print "\n";
+
+}
+
+sub ExpandCmds {
+  # Go through each command and for any that have more than
+  # one router type, split it into a separate item for each type
+  foreach my $key (keys(%cmds)) {
+    my ($letter, $strippedKey) = ($key =~ /(.*):(.*)/);
+    my @types = split(/,/, $strippedKey);
+    if (@types > 1) {
+      foreach my $type (@types) {
+        $cmds{"$letter:$type"} = $cmds{$key};
+      }
+    }
+  }
+
+}
+
+
+</%perl>

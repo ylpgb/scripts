@@ -1,0 +1,30 @@
+#!/usr/bin/env run-router-script
+#
+#  This will remove all sequenced-topics on the box
+#
+
+<%args>
+$msgVpn => default      # messageVpn
+</%args>
+
+show sequenced-topic * message-vpn <% $msgVpn %>
+
+<%perl>
+
+my ($seqTopics) = ($rrsLastResult =~ /------\s*(\n(.|\n)*)$/);
+
+my @names = ($seqTopics =~ /\n([A-Za-z0-9_\/#]+)\s/g);
+
+</%perl>
+
+enable
+con
+message-spool message-vpn <% $msgVpn %>
+
+
+% foreach my $t (@names) {
+no sequenced-topic <% $t %>
+% }
+
+end
+exit

@@ -1,0 +1,26 @@
+#!/usr/bin/env run-router-script
+#
+#  This script will add the specified number of subs with the specified prefix
+#  to the router.
+#
+<%args>
+$cn                  # Prefix string for the clients
+$cc                  # Number of clients to add
+$profile => default  # Which profile to give them
+$cb => 0             # create backup clients
+</%args>
+
+enable
+con t
+
+% for my $i (1 .. $cc) {
+
+create client <% $cn . sprintf("%04d", $i) %> <% ($cb) ? "backup" : "" %>
+profile <% $profile %>
+
+exit
+
+% }
+
+end
+exit

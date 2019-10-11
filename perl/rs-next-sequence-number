@@ -1,0 +1,24 @@
+#!/usr/bin/env run-router-script
+#
+#  This script will set the next sequence number of sequenced topics with the
+#  specified prefix to the router.
+#
+<%args>
+$sn                  # Prefix string for the sequeced topics
+$sc                  # Number of sequenced topics to add
+$msgVpn => default   # messageVpn
+$zf => 1             # want zero fill names.
+</%args>
+
+enable
+admin
+message-spool message-vpn <% $msgVpn %>
+
+% for my $i (1 .. $sc) {
+
+sequenced-topic <% $sn . (($zf) ? sprintf("%05d", $i) : sprintf("%d", $i)) %> next-sequence-number <% sprintf("%u", $i * 987654321) %>
+
+% }
+
+end
+exit

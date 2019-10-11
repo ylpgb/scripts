@@ -1,0 +1,96 @@
+#!/usr/bin/env run-router-script
+#
+#  This script will continuously toggle a generated set of 
+#  ACL exceptions 
+#
+<%args>
+at  =>  "pub"       # ACL type: client, pub, sub
+an  =>  "1"         # Number of ACL exceptions to generate
+sn  =>  "1"         # Starting exception number
+tp  =>  "acl/"      # Topic prefix for pub and sub exceptions
+tf  =>  ""          # Topic file
+ip  =>  "192.168"   # IP address prefix for client exceptions 
+nm  =>  "32"        # Netmask for client exceptions
+ap  =>  "default"   # ACL profile
+vpn =>  "default"   # Message VPN
+int =>  "10"        # Time interval for the toggle
+da =>  "allow"      # Default action: allow, disallow
+v  =>  "1"          # verbose.  I don't want logging in system-test; it will overwhelm the client files.
+</%args>
+
+% RrsSetTimeout(40); 
+% RrsShowOutput($v);
+<%perl>
+
+my $lastExcept = $sn + $an - 1;
+
+my $exception;
+
+</%perl>
+
+enable
+config
+acl-profile <% $ap %> message-vpn <% $vpn %> 
+<% $at %>
+default-action <% $da %>
+
+<%perl>
+my $counter=1;
+
+my @topics = ();
+if ($tf) {
+    open TOPIC_FILE, "<$tf";
+    @topics = <TOPIC_FILE>;
+} else {
+    @topics = ();
+}
+
+while (1 == 1) {
+  my $exception;
+
+  if ($tf) {
+      foreach (@topics) {
+          chomp;
+</%perl>
+          exception <% $_ %>
+<%perl>
+      }
+  } else {       
+      foreach my $val ($sn..$lastExcept) {
+          if ($at eq "client") {
+              $exception = $ip.".".int($val/255).".".int($val % 255)."/".$nm;
+          } else {
+              $exception = $tp.sprintf("%05d", $val);
+          }
+</%perl>
+            exception <% $exception %> 
+<%perl>
+      }
+  }
+  sleep $int ;
+
+  if ($tf) {
+      foreach (@topics) {
+          chomp;
+</%perl>
+          no exception <% $_ %>
+<%perl>
+      }
+  } else {       
+      foreach my $val ($sn..$lastExcept) {
+          if ($at eq "client") {
+              $exception = $ip.".".int($val/255).".".int($val % 255)."/".$nm;
+          } else {
+              $exception = $tp.sprintf("%05d", $val);
+          }
+</%perl>
+        no exception <% $exception %> 
+<%perl>
+      }
+  }   
+  sleep $int ;
+  
+  print "End of loop $counter\n";
+  $counter++;
+}
+</%perl>

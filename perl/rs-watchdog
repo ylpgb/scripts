@@ -1,0 +1,10 @@
+#!/usr/bin/env run-router-script
+#
+#  This will disable the watchdog
+#
+<%script type="soldebug"/>
+:conn 5
+setWatchdogStopOnFailure 0
+:lconn 1
+:unsafe
+setHostWatchDogEnabled(0)

@@ -1,0 +1,177 @@
+#!/usr/bin/env run-router-script
+#
+#  This script will add scaled configurations to the router.
+#
+
+<%args>
+$type               # type of object to scale
+$prefix             # prefix of name for object
+$startNum           # start number for name suffix
+$endNum             # end number for name suffix
+$msgVpn => ""       # message-vpn name, if applicable
+$queue => ""        # queue name, if applicable
+$bridge => ""       # bridge name, if applicable
+$aclProfile => ""   # acl-profile name, if applicable
+$cache => ""        # distributed-cache name, if applicable
+$cluster => ""      # cache-cluster name, if applicable
+$nbrIpPrefix => ""  # neighbour ip prefix, if appliacable
+$remove => "0"      # remove object (otherwise, add object)
+</%args>
+
+enable
+config
+
+% if ($type eq "queue" && $msgVpn ne "") {
+    message-spool message-vpn <% $msgVpn %>
+% }
+
+% if ($type eq "queue_subscription" && $msgVpn ne "" && $queue ne "") {
+    message-spool message-vpn <% $msgVpn %>
+    queue <% $queue %>
+% }
+
+% if ($type eq "bridge_subscription" && $msgVpn ne "" && $bridge ne "") {
+    bridge <% $bridge %> message-vpn <% $msgVpn %>
+% }
+
+% my $k = 0;
+% my $l = 175;
+% if ($type eq "acl-profile_client-connect_exception" && $msgVpn ne "" && $aclProfile ne "") {
+    acl-profile <% $aclProfile %> message-vpn <% $msgVpn %>
+% }
+
+% if ($type eq "acl-profile_publish-topic_exception" && $msgVpn ne "" && $aclProfile ne "") {
+    acl-profile <% $aclProfile %> message-vpn <% $msgVpn %>
+% }
+
+% if ($type eq "acl-profile_subscribe-topic_exception" && $msgVpn ne "" && $aclProfile ne "") {
+    acl-profile <% $aclProfile %> message-vpn <% $msgVpn %>
+% }
+
+% if ($type eq "cache-cluster_home-cache-cluster" && $msgVpn ne "" && $cache ne "" && $cluster ne "") {
+    distributed-cache <% $cache %> message-vpn <% $msgVpn %>
+    cache-cluster <% $cluster %>
+    global-caching
+% }
+
+% if ($type eq "cache-cluster_topic" && $msgVpn ne "" && $cache ne "" && $cluster ne "") {
+    distributed-cache <% $cache %> message-vpn <% $msgVpn %>
+    cache-cluster <% $cluster %>
+% }
+
+% if ($type eq "jndi_connection-factory" && $msgVpn ne "") {
+    jndi message-vpn <% $msgVpn %>
+% }
+
+% if ($type eq "cspf_neighbor") {
+    routing cspf
+% }
+
+% for my $i ($startNum .. $endNum) {
+
+% if ($type eq "message-vpn") {
+    <% ($remove) ? "no" : "create" %> message-vpn <% $prefix . $i %>
+%     if (!$remove) {
+        exit
+%     }
+% }
+
+% if ($type eq "queue" && $msgVpn ne "") {
+    <% ($remove) ? "no" : "create" %> queue <% $prefix . $i %>
+%     if (!$remove) {
+        exit
+%     }
+% }
+
+% if ($type eq "queue_subscription" && $msgVpn ne "" && $queue ne "") {
+    <% ($remove) ? "no" : "" %> subscription topic <% $prefix . $i %>
+% }
+
+% if ($type eq "bridge" && $msgVpn ne "") {
+    <% ($remove) ? "no" : "create" %> bridge <% $prefix . $i %> message-vpn <% $msgVpn %>
+%     if (!$remove) {
+        exit
+%     }
+% }
+
+% if ($type eq "bridge_subscription" && $msgVpn ne "" && $bridge ne "") {
+    <% ($remove) ? "no" : "" %> remote subscription-topic <% $prefix . $i %>
+% }
+
+% if ($type eq "acl-profile_client-connect_exception" && $msgVpn ne "" && $aclProfile ne "") {
+%     if ($k == 255) {
+%         $k = 0;
+%         $l++;
+%     }
+    <% ($remove) ? "no" : "" %> client-connect exception <% $prefix . "." . $l . "." . $k . "/20" %>
+%     $k++;
+% }
+
+% if ($type eq "acl-profile_publish-topic_exception" && $msgVpn ne "" && $aclProfile ne "") {
+    <% ($remove) ? "no" : "" %> publish-topic exception <% $prefix . $i %>
+% }
+
+% if ($type eq "acl-profile_subscribe-topic_exception" && $msgVpn ne "" && $aclProfile ne "") {
+    <% ($remove) ? "no" : "" %> subscribe-topic exception <% $prefix . $i %>
+% }
+
+% if ($type eq "client-profile" && $msgVpn ne "") {
+    <% ($remove) ? "no" : "create" %> client-profile <% $prefix . $i %> message-vpn <% $msgVpn %>
+%     if (!$remove) {
+        exit
+%     }
+% }
+
+% if ($type eq "client-username" && $msgVpn ne "") {
+    <% ($remove) ? "no" : "create" %> client-username <% $prefix . $i %> message-vpn <% $msgVpn %>
+%     if (!$remove) {
+        exit
+%     }
+% }
+
+% if ($type eq "cache-cluster_home-cache-cluster" && $msgVpn ne "" && $cache ne "" && $cluster ne "") {
+    <% ($remove) ? "no" : "create" %> home-cache-cluster <% $prefix . $i %>
+%     if (!$remove) {
+        exit
+%     }
+% }
+
+% if ($type eq "cache-cluster_topic" && $msgVpn ne "" && $cache ne "" && $cluster ne "") {
+    <% ($remove) ? "no" : "" %> topic <% $prefix . $i %>
+% }
+
+% if ($type eq "jndi_connection-factory" && $msgVpn ne "") {
+    <% ($remove) ? "no" : "create" %> connection-factory <% $prefix . $i %>
+%     if (!$remove) {
+        exit
+%     }
+% }
+
+% if ($type eq "cspf_neighbor") {
+%     if (!$remove) {
+        create neighbor <% $prefix . $i %> connect-via <% $nbrIpPrefix . $i %>
+	####################################
+	### new way of creating neighbor ###
+	create neighbor <% $prefix . $i %>
+	    connect-via <% $nbrIpPrefix . $i %>
+	    no shut
+	####################################
+        exit
+%     } else {
+        no neighbor <% $prefix . $i %>
+%     }
+% }
+
+% if ($type eq "username") {
+%     if (!$remove) {
+        create username <% $prefix . $i %> password <% $prefix . $i %> cli
+        exit
+%     } else {
+        no username <% $prefix . $i %>
+%     }
+% }
+
+% }
+
+end
+exit

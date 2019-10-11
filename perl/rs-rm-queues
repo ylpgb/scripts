@@ -1,0 +1,29 @@
+#!/usr/bin/env run-router-script
+#
+#  This script will remove the specified number of queues with the specified
+#  prefix from the router.  It is intended to be used as cleanup for the
+#  script rs-add-queues.
+#
+
+<%args>
+$qn                     # Prefix string for the queues
+$qc                     # Number of queues to remove
+$msgVpn => default      # messageVpn
+</%args>
+
+enable
+con t
+message-spool message-vpn <% $msgVpn %>
+
+% for my $i (1 .. $qc) {
+% my $queue = $qn . sprintf("%05d", $i);
+
+queue <% $queue %>
+shut
+exit
+no queue <% $queue %>
+
+% }
+
+end
+exit

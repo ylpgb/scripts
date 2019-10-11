@@ -1,0 +1,20 @@
+#!/bin/bash
+
+# Upload server certificate
+addkeyto -q $1
+addkeyto -p 2222 -q $1
+scp /home/public/RND/repository/certs/server_certs/sha2/afwCert-rsa-2048-sha256.pem root@$1:/root/jail/certs/sempV2IntegrationTester.pem
+scp -P 2222 /home/public/RND/repository/certs/server_certs/sha2/afwCert-rsa-2048-sha256.pem root@$1:/root/jail/certs/sempV2IntegrationTester.pem
+
+# Get directory of script
+SOURCE="${BASH_SOURCE[0]}"
+while [ -h "$SOURCE" ]; do # resolve $SOURCE until the file is no longer a symlink
+  DIR="$( cd -P "$( dirname "$SOURCE" )" && pwd )"
+  SOURCE="$(readlink "$SOURCE")"
+  [[ $SOURCE != /* ]] && SOURCE="$DIR/$SOURCE" # if $SOURCE was a relative symlink, we need to resolve it relative to the path where the symlink file was located
+done
+DIR="$( cd -P "$( dirname "$SOURCE" )" && pwd )"
+
+# Run CLI portion of script
+${DIR}/rs-sempv2-test-prep-cli $1
+

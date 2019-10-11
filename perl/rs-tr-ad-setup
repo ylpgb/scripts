@@ -1,0 +1,40 @@
+#!/usr/bin/env run-router-script
+#
+#  This will do a typical router setup for most debuging
+#
+<%args>
+</%args>
+
+# Call the basic setup for TR routers
+<& rs-tr-setup &>
+
+conf t
+
+# Set up some AD stuff
+hardware
+  message-spool
+    internal-disk
+    no shut primary
+  exit
+exit 
+
+client-profile default
+
+% if ($rrsLastResult =~ /missing parameter/) {
+  client-profile default message-vpn default
+% }     
+
+  message-spool
+% my $doExit; if ($rrsLastResult !~ /unknown/) {$doExit = 1;}
+  allow-guaranteed-message-send
+  allow-guaranteed-message-receive
+  allow-guaranteed-endpoint-create
+  allow-transacted-sessions
+  <% $doExit ? "exit" : "" %>
+exit
+
+message-spool message-vpn default
+  max-spool-usage 50000
+exit
+
+end

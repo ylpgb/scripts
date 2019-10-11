@@ -1,0 +1,118 @@
+#!/usr/bin/env run-router-script
+#
+#  This will configure both nodes passed in the router list as an
+#  AD redundant pair.
+#
+<%args>
+reset  => 1               # Reset the message-spool
+opmode => 3               # CR=2 and TR=3
+</%args>
+
+# Validate that we have a pair of routers to configure
+<%perl>
+if ($rrsNumRouters != 2) {
+    die "Must give exactly 2 routers.  $rrsNumRouters have been given";
+}
+</%perl>
+
+# Need to do a command to the second router so that $rrsRouterNames[1] will be
+# initialized
+<%script router-num="1" type = "cli">
+# Figure out if client-profiles are VPN-based or global.  We assume the value
+# is the same for both routers in the pair.
+enable
+configure terminal
+client-profile ?
+
+% my $cpVpnBased = 0;
+% $cpVpnBased = 1 if ($rrsLastResult =~ m/message-vpn/);
+
+<%script type="linux">
+% printf "Opmode is: %d\n\n", $opmode;
+
+# Reset of message-spool must be done before configuring aa-pair, as
+# redundancy must be shutdown
+% if ($reset) {
+<& rs-reset-message-spool, nodeIndex => 0, opmode => $opmode &>
+<& rs-reset-message-spool, nodeIndex => 1, opmode => $opmode &>
+% }
+
+# Config the AA pair without AD
+<& rs-config-aa-pair &>
+
+# Config disk wwn for AD
+<& rs-config-disk, nodeIndex => 0, opmode => $opmode &>
+<& rs-config-disk, nodeIndex => 1, opmode => $opmode &>
+
+% sub allowGuaranteed($);
+% sleep(2);
+
+<%script router-num="0" type = "cli">
+enable
+admin
+% if ($opmode == 3) {
+    system
+% }
+message-spool
+assert-disk-ownership
+end
+configure
+% if ($opmode == 3) {
+    hardware
+% }
+message-spool
+no shutdown primary
+end
+% allowGuaranteed($opmode);
+end
+exit
+
+<%script router-num="1" type = "cli">
+enable
+configure
+% if ($opmode == 3) {
+    hardware
+% }
+message-spool
+no shutdown backup
+end
+% allowGuaranteed($opmode);
+end
+exit
+
+% sub allowGuaranteed($)
+% {
+%   my $opmode = shift;
+%   if ($opmode == 3) {
+      configure
+% if ($cpVpnBased) {
+      client-profile default message-vpn default
+% } 
+% else {
+      client-profile default
+% } 
+      message-spool
+      allow-guaranteed-message-send
+      allow-guaranteed-message-receive
+      allow-guaranteed-endpoint-create
+      allow-transacted-sessions
+      end
+      configure
+      message-spool message-vpn default
+      max-spool-usage 60000
+%   }
+%   else {
+      configure
+      subscriber-profile default
+      closed-user-group 1
+      message-spool
+      allow-guaranteed-message-receive
+      allow-guaranteed-endpoint-create
+      end
+      configure
+      publisher-profile default
+      closed-user-group 1
+      allow-guaranteed-message-send
+%   }
+% }
+

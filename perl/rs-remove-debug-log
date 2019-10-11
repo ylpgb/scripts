@@ -1,0 +1,6 @@
+#!/usr/bin/env run-router-script
+
+%# Remove debug.log
+<%script type="linux">
+
+rm -f /usr/solace/jail/logs/debug.log 

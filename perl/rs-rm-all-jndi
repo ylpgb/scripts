@@ -1,0 +1,63 @@
+#!/usr/bin/env run-router-script
+#
+#  This will remove all jndi config on the box
+#
+
+show jndi connection-factory *
+
+<%perl>
+
+my ($result) = ($rrsLastResult =~ /-------\s*(\n(.|\n)*)$/);
+my @names = ($result =~ /\n([A-Za-z0-9_\/]+)\s/g);
+
+</%perl>
+
+enable
+con t
+
+% foreach my $key (@names) {
+no jndi connection-factory <% $key %>
+% }
+
+end
+exit
+
+
+show jndi topic *
+
+<%perl>
+
+($result) = ($rrsLastResult =~ /-------\s*(\n(.|\n)*)$/);
+@names = ($result =~ /\n([A-Za-z0-9_\/]+)\s/g);
+
+</%perl>
+
+enable
+con t
+
+% foreach my $key (@names) {
+no jndi topic <% $key %>
+% }
+
+end
+exit
+
+
+show jndi queue *
+
+<%perl>
+
+($result) = ($rrsLastResult =~ /-------\s*(\n(.|\n)*)$/);
+@names = ($result =~ /\n([A-Za-z0-9_\/]+)\s/g);
+
+</%perl>
+
+enable
+con t
+
+% foreach my $key (@names) {
+no jndi queue <% $key %>
+% }
+
+end
+exit

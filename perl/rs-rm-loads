@@ -1,0 +1,73 @@
+#!/usr/bin/env run-router-script
+#
+#  This will remove loads on the router
+#
+
+<%args>
+$ln => ""       # String for load(s)
+$lc => 1        # Number of loads
+$pre => 1       # Prefix or exact string
+$rem => 1       # Remove or keep load(s)
+$old => 1       # Oldest load(s) are first
+$all => 1       # Apply to all loads
+</%args>
+
+show version
+
+<%perl>
+
+my ($output) = ($rrsLastResult =~ /Loads available on the appliance:(\n(.|\n)*)System uptime:/);
+
+my $regex = ".+";
+if ($ln ne "") {
+  $regex = "$ln";
+  if ($pre == 1) {
+    $regex .= ".+";
+  }
+}
+
+my $init_regex = ".+";
+if ($all == 0) {
+  $init_regex = $regex;
+}
+
+my @init_loads = ($output =~ /\nLoad \d+:\s($init_regex)/g);
+if ($old == 0) {
+  @init_loads = sort { $b cmp $a } @init_loads;
+}
+
+my @loads = ();
+my $count = 0;
+if ($rem == 1) {
+  foreach my $load (@init_loads) {
+    if ($count == $lc) {
+      last;
+    }
+    if ($load =~ m/$regex$/) {
+      push(@loads, $load);
+      $count += 1;
+    }
+  }
+} else {
+  foreach my $load (@init_loads) {
+    if ($load =~ m/$regex$/) {
+      if ($count >= $lc) {
+        push(@loads, $load);
+      }
+      $count += 1;
+    } else {
+      push(@loads, $load);
+    }
+  }
+}
+
+</%perl>
+
+enable
+
+% foreach my $load (@loads) {
+delete-load <% $load %>
+% }
+
+end
+exit

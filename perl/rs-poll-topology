@@ -1,0 +1,131 @@
+#!/usr/bin/env run-router-script
+#
+# Will poll a list of routers and draw the resulting topology.
+#
+# Note that if it finds connections to routers that are not in
+# its current list of routers, it will add them.  This means that
+# it is only necessary to specify one of the routers in the network 
+# and the rest will be discovered.
+#
+# Much credit goes to David Horton who gave me the idea to draw
+# the topology using Graph::Easy.
+
+
+<%args>
+$interval => 5 # Polling interval in seconds
+</%args>
+
+
+<%perl>
+use Data::Dumper;
+use Graph::Easy;
+
+my %routers;
+foreach my $name (@rrsRouterNames) {
+  my $ip = $rrsRouterInfo{$name}{Ip};
+  $routers{$ip} = $rrsRouterInfo{$name};
+}
+
+RrsShowOutput(0);
+
+while(1) {
+
+  # Get the neigbor info
+  my $routerNum = 0;
+  my %routerInfo;
+  while ($routerNum < $rrsNumRouters) {
+  
+</%perl>
+  
+  <%script router-num="$routerNum">
+  show cspf neighbor
+  
+<%perl>
+  
+  # We now have the neighbor info from the router
+  
+    my @neighbors = ($rrsLastResult =~ /\n(\d+\.\d+\.\d+\.\d+:\d+\s+\w+)/g);
+    foreach my $neighbor (@neighbors) {
+      my ($ip, $port, $status) = ($neighbor =~ /^(\d+\.\d+\.\d+\.\d+):(\d+)\s+(\w+)/);
+      my $hostIp = lcAddrToHostAddr($ip);
+      if (!$routers{$hostIp}) {
+         RrsAddRouter($hostIp);
+         $routers{$hostIp} = $rrsRouterInfo{$rrsRouterNames[scalar(@rrsRouterNames)-1]};
+      }
+      $routerInfo{$rrsRouterIp}{Name} = $rrsRouterName;
+      $routerInfo{$rrsRouterIp}{Neighbors}{$hostIp}{Status} = $status;
+      $routerInfo{$rrsRouterIp}{Neighbors}{$hostIp}{DpIp}   = $ip;
+      $routerInfo{$rrsRouterIp}{Neighbors}{$hostIp}{DpPort} = $port;
+      $routerInfo{$rrsRouterIp}{Neighbors}{$hostIp}{Name}   = $routers{$hostIp}->{Name};
+    }
+  
+    $routerNum++;
+  
+  }
+  
+  # Draw the topology
+  my $graph = Graph::Easy->new();
+  
+  foreach my $router (sort(keys(%routerInfo))) {
+    $graph->add_node($routerInfo{$router}{Name});
+    # print "Adding node for: $routerInfo{$router}{Name}\n";
+  }
+  
+  foreach my $router (sort(keys(%routerInfo))) {
+  
+    foreach my $neighbor (sort(keys(%{$routerInfo{$router}{Neighbors}}))) {
+      
+      my @nodes = sort($routerInfo{$router}{Name}, $routerInfo{$router}{Neighbors}{$neighbor}{Name});
+      my $edge = $graph->edge(@nodes);
+      if ($edge) {
+        $edge->bidirectional(1);
+      } else {
+        # print "Adding edge for $routerInfo{$router}{Name} to $routerInfo{$router}{Neighbors}{$neighbor}{Name}\n";
+        $edge = $graph->add_edge_once(@nodes);
+      }
+      
+      if ($routerInfo{$router}{Neighbors}{$neighbor}{Status} !~ /ok/i) {
+        $edge->set_attribute('style', 'dotted');
+      }
+    }
+  }
+
+  # Clear the screen and draw the topology
+  print "[2J[0;0H";
+  print "Network Topology:\n\n";
+  print $graph->as_ascii();
+
+  ReadMode 4;
+  my $char = ReadKey($interval);  
+  ReadMode 0;
+  if (($char eq "q") || ($char eq "")) {
+    last;
+  }
+
+}
+
+sub lcAddrToHostAddr {
+  my ($lcAddr) = (@_);
+
+  if ($lcAddr =~ /(\d+\.\d+\.)(\d+)(\..*)/) {
+    if ($2 eq '164') {
+      return $1."129".$3;
+    }
+    elsif ($2 eq '160') {
+      return $1."128".$3;
+    }
+    else {
+      Fatal("Unexpected neighbor address:  $lcAddr");
+    }
+  }
+
+}
+
+</%perl>
+
+
+
+
+
+
+

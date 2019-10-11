@@ -1,0 +1,117 @@
+#!/usr/bin/env run-router-script
+#
+#  This will do a typical router setup for most debuging
+#
+<%args>
+$port => 7500  # Listen port
+$primary => 1  # If non-zero, the rvgd operates on the TMA's primary VRID.
+$gwIntf => "rvgd"   # if "rvgd", the gateway uses the default eth0/eth2 rvgd interface.  If "mgmt", the gateway uses the eth1 mgmt interface.
+</%args>
+
+<& rs-config-if &>
+
+show version
+% my ($major, $minor, $branch) = ($rrsLastResult =~ /CLI\s+([0-9]+)\.([0-9]+)([a-zA-Z]*)\./);
+% if ((($major == 1) && ($minor < 18)) ||
+%     (($major == 4) && ($minor < 4)) ||
+%     (($major > 1) && ($major < 4)))
+% {   # rs-rvgd-setup modifies a script in place, which doesn't apply in more
+%     # recent loads.  So only do it for pre-d18/4.4 loads.
+<& rs-rvgd-setup, primary=>$primary, gwIntf=>$gwIntf &>
+% }
+
+
+# Set the gateway interface address.
+#
+show interface
+<%perl>
+    my $intfName = "unknown";
+    if ($rrsLastResult =~ /eth0/) {
+        $intfName = "eth0";
+    } else {
+        $intfName = "eth2";
+    }
+
+    my $gwIntfIp = "192.168.";
+    if ($rrsRouterNetNum == 128) {
+        $gwIntfIp .= "162.";
+    } else {
+        $gwIntfIp .= "166.";
+    }
+    $gwIntfIp .= "$rrsRouterNum";
+</%perl>
+enable
+configure terminal
+% if ($minor >= 18)
+% {
+    # set primary rvgd intf ip
+    ip vrf management
+    interface <% $intfName %>:1
+    ip-address <% $gwIntfIp %>/19
+    end
+    conf
+
+    show ip vrf msg-backbone
+%   my $ipIntf;
+%   if ($rrsLastResult =~ m|(\d+/\d+/lag\d+:\d+)\s+primary|)
+%   {
+%       $ipIntf = $1;
+        rv interface <% $ipIntf %> primary
+        end
+        conf
+%   }
+%   elsif ($rrsLastResult =~ m|(\d+/\d+/lag\d+:\d+)\s+static|)
+%   {
+%       $ipIntf = $1;
+        rv interface <% $ipIntf %> primary
+        end
+        conf
+%   }
+%   else { print "LR: $rrsLastResult\n"; }
+    show ip vrf msg-backbone
+%   if ($rrsLastResult =~ m|(\d+/\d+/lag\d+:\d+)\s+backup|)
+%   {
+%       $ipIntf = $1;
+        rv interface <% $ipIntf %> backup
+        end
+        conf
+%   }
+
+%   # Turn on ACLs
+    end
+    admin
+    product-key mkyfMM4s5sY-9r9sosOYP9U-NAdrPAkOd8A-0001
+    end
+    conf
+
+% } else {
+    interface <% $intfName %>
+    ip-address <% $gwIntfIp %>/19
+    end
+    configure terminal
+    rv
+    gateway
+%   if ($primary) {
+        primary
+%   } else {
+        no primary
+%   }
+    end
+    configure terminal
+% }
+rv
+gateway
+no shut
+exit
+listen-port <% $port %>
+no shutdown
+end
+
+%# Turn on SEMP access
+<%script type="soldebug">
+:conn 3
+mplXmlSwitchExposeSemp
+
+% if ($rrsLastResult =~ /failed/) { # Try again for good measure
+mplXmlSwitchExposeSemp
+% }

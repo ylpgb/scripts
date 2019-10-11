@@ -1,0 +1,24 @@
+#!/usr/bin/env run-router-script
+#
+#  This script will add the specified number of queue subscriptions 
+#  to the specified router, message-vpn, queue.
+#
+<%args>
+$qn                  # queue name
+$tc                  # Number of topic count
+$msgVpn => default   # messageVpn
+</%args>
+
+enable
+con t
+
+message-spool message-vpn <% $msgVpn %>
+queue <% $qn %>
+% for my $i (1 .. $tc) {
+subscription topic <%  sprintf("rich/topic/%06d",$i) %> 
+
+
+% }
+
+end
+exit

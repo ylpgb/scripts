@@ -1,0 +1,48 @@
+#!/usr/bin/env run-router-script
+#
+<%args>
+message_vpn        # Name of message-vpn to setup for was/jboss samples.  The was samples use 'was' by default and jboss samples use 'jboss' by default.
+</%args>
+
+home
+enable
+configure
+jndi message-vpn <% $message_vpn %>
+no connection-factory sol/jndi/defaultCF
+no connection-factory sol/jndi/defaultXaCF
+no queue sol/jndi/solQueue
+no queue sol/jndi/solQueueNE
+no queue sol/jndi/solQueueNotExist
+no topic sol/jndi/solTopic
+no topic sol/jndi/solTopicND
+exit
+message-spool message-vpn <% $message_vpn %>
+queue solQueue
+shutdown
+exit
+no queue solQueue
+queue solQueueNE
+shutdown
+exit
+no queue solQueueNE
+topic-endpoint solDte
+shutdown
+exit
+no topic-endpoint solDte
+exit
+client-username solCFCred message-vpn <% $message_vpn %>
+shutdown
+exit
+no client-username solCFCred message-vpn <% $message_vpn %>
+client-username test message-vpn <% $message_vpn %>
+shutdown
+exit
+no client-username test message-vpn <% $message_vpn %>
+client-username abc message-vpn <% $message_vpn %>
+shutdown
+exit
+no client-username abc message-vpn <% $message_vpn %>
+message-vpn <% $message_vpn %>
+shutdown
+exit
+no message-vpn <% $message_vpn %>

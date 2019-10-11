@@ -1,0 +1,20 @@
+#!/usr/bin/env run-router-script
+#  Remove all trusted roots
+
+enable
+configure
+authentication
+
+show trusted-root
+
+<%perl>
+my @trustedRoots = ($rrsLastResult =~ /(.+\..+)/g);
+</%perl>
+
+% foreach my $tr (@trustedRoots) {
+%  my $tr = "${tr}";
+   no trusted-root file <% $tr %>
+% }
+
+end
+exit

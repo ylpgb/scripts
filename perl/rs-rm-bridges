@@ -1,0 +1,25 @@
+#!/usr/bin/env run-router-script
+#
+#  This will remove all bridges on the router
+#
+
+<%args>
+$bn => ""            # Prefix string for the bridge name
+$vn => ""            # Prefix string for the VPN name
+$bc                  # Number of bridges to add
+$bs => 1             # Starting bridge number
+$zf => 1             # Want zero fill names
+</%args>
+
+enable
+con t
+
+% for my $i ($bs .. $bc) {
+    bridge <% $bn . (($zf) ? sprintf("%05d", $i) : sprintf("%d", $i)) %>  message-vpn <% $vn . (($zf) ? sprintf("%05d", $i) : sprintf("%d", $i)) %>
+    shut
+    exit
+    no bridge <% $bn . (($zf) ? sprintf("%05d", $i) : sprintf("%d", $i)) %>  message-vpn <% $vn . (($zf) ? sprintf("%05d", $i) : sprintf("%d", $i)) %>
+% }
+
+end
+exit

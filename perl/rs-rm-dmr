@@ -1,0 +1,57 @@
+#!/usr/bin/env run-router-script
+#
+
+# Remove DMR state in a set of routers. Any number of routers can
+# be provided as the initial argument as a comma-separated list.
+#
+# Any configured cluster is removed. All specified MsgVpns have DMR
+# disabled.
+
+<%args>
+vpns        => "default"     # comma-separated list of VPNs to disable for DMR
+</%args>
+
+% use Data::Dumper;
+
+% RrsShowOutput(0);
+
+% my ($cn, $vn);
+% my @vpnList = split(/,/,$vpns);
+
+% for my $i (0 .. ($rrsNumRouters-1)) {
+%   print "Removing DMR configuration of $rrsRouterNames[$i]...\n";
+
+<%script router-num="$i" type="cli">
+show cluster *
+
+%   ($cn) = ($rrsLastResult =~ /Cluster Name\s+: (.*)/);
+%   if ($cn) {
+
+home
+enable
+configure
+routing
+dynamic-message-routing
+cluster <% $cn %>
+shutdown
+exit
+no cluster <% $cn %>
+
+%   }
+
+home
+enable
+configure
+
+%   for $vn (@vpnList) {
+
+message-vpn <% $vn %>
+dynamic-message-routing shutdown
+exit
+
+%   }
+
+% }
+
+% RrsShowOutput(1);
+

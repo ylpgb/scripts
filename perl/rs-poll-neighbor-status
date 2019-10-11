@@ -1,0 +1,18 @@
+#!/usr/bin/env run-router-script
+#
+#  This script will periodically display the neighbor status to the screen
+#
+<%args>
+$interval => 1 # Polling interval in seconds
+</%args>
+
+% RrsShowOutput(0);
+
+enable
+
+% while (1) {
+show cspf neighbor
+% Msg($rrsLastResult); select(undef, undef, undef, $interval);
+% }
+
+exit

@@ -1,0 +1,21 @@
+#!/usr/bin/env run-router-script
+#
+#  This script will add the specified number of pubs with the specified prefix
+#  to the router.
+#
+<%args>
+$pn                  # Prefix string for the publishers
+$pc                  # Number of publishers to add
+$profile => default  # Which profile to give them
+$pb => 0             # create backup publishers
+</%args>
+
+enable
+con t
+% for my $i (1 .. $pc) {
+publisher <% $pn . sprintf("%04d", $i) %> <% ($pb) ? "backup" : "" %>
+profile <% $profile %>
+exit
+% }
+end
+exit

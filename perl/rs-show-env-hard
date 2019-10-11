@@ -1,0 +1,8 @@
+#!/usr/bin/env run-router-script
+#
+#  This script will show hardware and environment details
+#  to the router.
+#
+enable
+show hardware detail
+show environment

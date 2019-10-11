@@ -1,0 +1,348 @@
+#!/usr/bin/env run-router-script
+#
+#  This script will launch an AD test against a specified RUT, distributing the 
+#  clients across the specified list of perf hosts.  The test will run in a mode
+#  of N/N/N, which means that there will be N pubs, each delivering to one of N
+#  subs.
+#
+#  When running the script, specified a comma separated list of routers.  The
+#  first router will be the RUT and the rest are the perf hosts.  If only one
+#  router is specified, then sdkperf will be run on the RUT using the management
+#  port.
+#
+#  Note that this script will install the lastest sdkperf for the current 
+#  release version of the RUT.  Currently, there is no way to override this
+#
+<%args>
+$pc     => 10      # Number of publishers and subscribers to add
+$mr     => 1000    # Aggregate ingress document rate - this will be divided across all publishers
+$mn     => 10000   # Aggregate number of documents to send - this will be divided across all publishers
+$ms     => 600     # Message size in bytes
+$noinit => 0       # Don't perform the system setup - use this on all but first run
+$sdk_per_host => 4 # How many instances of sdkperf are run per perf host (this many for each of pubs and subs - i.e. there will be this number of pub instances and also this number of sub instances)
+$pw     => 18      # Publisher window
+$sw     => 50      # Subscriber window
+</%args>
+
+
+%######################################################
+%## Configure some structures that will be used below
+%######################################################
+<%perl>
+my $numPerfHosts  = ($rrsNumRouters > 1) ? $rrsNumRouters - 1 : 1;
+my $pubsPerHost   = int(($pc+$numPerfHosts-1)/$numPerfHosts);
+my $pubsPerSdk    = int(($pubsPerHost+$sdk_per_host-1)/$sdk_per_host);
+my $firstPerfHost = ($rrsNumRouters > 1) ? 1 : 0;
+my @cfg;
+
+for my $i (0 .. $pc-1) {
+  my $host = int($i/$pubsPerHost);
+  my $sdkInstance = int(($i % $pubsPerHost)/$pubsPerSdk);
+  my $pubNum = ($i % $pubsPerHost) % $pubsPerSdk;
+  $cfg[$host+$firstPerfHost][$sdkInstance]{Pubs}[$pubNum]{Name}    = sprintf("p${host}_${sdkInstance}_%04d", $pubNum+1);
+  $cfg[$host+$firstPerfHost][$sdkInstance]{Pubs}[$pubNum]{Element} = sprintf("a${host}_${sdkInstance}_%04d", $pubNum+1);
+  $cfg[$host+$firstPerfHost][$sdkInstance]{PubBase} = "p${host}_${sdkInstance}_";
+  push(@{$cfg[$host+$firstPerfHost][$sdkInstance]{Pubs}[$pubNum]{Files}}, 
+       "doc-". $cfg[$host+$firstPerfHost][$sdkInstance]{Pubs}[$pubNum]{Element} . "-$ms.xml");
+  $cfg[$host+$firstPerfHost][$sdkInstance]{Subs}[$pubNum]{Name} = sprintf("s${host}_${sdkInstance}_%04d", $pubNum+1);
+  $cfg[$host+$firstPerfHost][$sdkInstance]{Subs}[$pubNum]{Subscription} = sprintf("/a${host}_${sdkInstance}_%04d", $pubNum+1);
+  $cfg[$host+$firstPerfHost][$sdkInstance]{Subs}[$pubNum]{SubFileName}  = sprintf("sub-s${host}_${sdkInstance}_%04d.xml", $pubNum+1);
+
+  $cfg[$host+$firstPerfHost][$sdkInstance]{SubBase} = "s${host}_${sdkInstance}_";
+}
+
+</%perl>
+
+
+
+%##################################
+%## Do some basic setup of the RUT
+%##################################
+<%script router-num="0" type="cli">
+% if (!$noinit) {
+<& rs-config-if &>
+<& rs-no-authentication &>
+<& rs-rm-all-subs &>
+<& rs-rm-all-pubs &>
+<& rs-typical-profile, cug => 1, profile => "default" &>
+% }
+
+%# Get the release of SolOS (so we know which version of sdkperf to use)
+show version
+% my ($release) = ($rrsLastResult =~ /CLI\s+([0-9a-zA-Z]+\.[0-9a-zA-Z]+)\./);
+
+
+
+
+%###############################
+%## Setup each of the perf hosts
+%###############################
+<%perl>
+
+if (!$noinit) {
+  for my $num ($firstPerfHost .. $rrsNumRouters-1) {
+    SetupPerfHost($num, $release);
+  }
+}
+</%perl>
+
+
+
+%##################################
+%## Configure all the pubs and subs
+%##################################
+<%script router-num="0" type="cli">
+enable
+con t
+% foreach my $host (@cfg) {
+%   foreach my $sdk (@{$host}) {
+%     foreach my $pub (@{$sdk->{Pubs}}) {
+
+publisher <% $pub->{Name} %>
+profile default
+exit
+
+%     }
+
+%     foreach my $sub (@{$sdk->{Subs}}) {
+
+subscriber <% $sub->{Name} %>
+profile default
+exit
+
+%     }
+%   }
+% }
+
+end
+exit
+
+
+
+%###############
+%## Turn on AD
+%###############
+enable
+con t
+message-spool
+internal-disk
+no shutdown primary
+end
+exit
+
+
+
+%###################
+%## Start the test
+%###################
+<%perl>
+for my $num ($firstPerfHost .. $rrsNumRouters-1) {
+  LaunchSdkperfSubs($num);
+}
+for my $num ($firstPerfHost .. $rrsNumRouters-1) {
+  LaunchSdkperfPubs($num);
+}
+</%perl>
+
+
+%#############################
+%## Wait for tests to complete
+%#############################
+<%perl>
+RrsShowOutput(0);
+sleep 1;
+my $aggPubRate = 0;
+my $aggSubRate = 0;
+for my $num ($firstPerfHost .. $rrsNumRouters-1) {
+  WaitForPubs($num);
+}
+for my $num ($firstPerfHost .. $rrsNumRouters-1) {
+  WaitForSubs($num);
+}
+
+Msg("Aggregate Publish Rate: $aggPubRate, Aggregate Subscriber Rate: $aggSubRate");
+</%perl>
+
+
+
+
+
+%##############
+%## FUNCTIONS
+%##############
+
+<%perl>
+
+##############################################################################
+## SetupPerfHost - This will configure a single perf host 
+##
+##############################################################################
+sub SetupPerfHost {
+  my ($rtrNum, $release) = @_;
+
+</%perl>
+<%script router-num="$rtrNum" type="linux">
+<& rs-install-sdkperf, release => $release,  &>
+pkill sdkperf
+<%perl>
+
+  # Generate some docs and copy them to the perf host
+  my $tmpDir = "/tmp/adperf.$$";
+  `mkdir -p $tmpDir`;
+  chdir($tmpDir);
+  foreach my $sdkInst (@{$cfg[$rtrNum]}) {
+    foreach my $pub (@{$sdkInst->{Pubs}}) {
+      my $docPrefix = "doc-". $pub->{Element};
+      my $docName   = "doc-". $pub->{Element} . "-$ms.xml";
+      `/home/efunnekotter/devtools/efunnekotter/gen-xml-files --start=$ms --root=$pub->{Element} --file=$docPrefix`;
+      `scp $docName root\@${rrsRouterName}:/root/sdkperf.install.$release`;
+    }
+    foreach my $sub (@{$sdkInst->{Subs}}) {
+      my $docName   = "sub-$sub->{Name}.xml";
+      `echo "$sub->{Subscription}" > $docName`;
+      `scp $docName root\@${rrsRouterName}:/root/sdkperf.install.$release`;
+    }
+  }
+
+  `rm -rf $tmpDir`;
+
+} # SetupPerfHost #
+
+
+##############################################################################
+## LaunchSdkperfPubs - 
+##
+##############################################################################
+sub LaunchSdkperfPubs {
+  my ($rtrNum) = @_;
+
+  my $flags = '-q -awt=60 -tnd -d  -l -lb=200 -lg=5 -amr=200 -rc=10';
+
+  my $rutIp = "192.168.". ($rrsRouterNetNums[0] == 128 ? "160" : "164") .".$rrsRouterNums[0]";
+
+  foreach my $sdkInst (@{$cfg[$rtrNum]}) {
+    my @files;
+    map {push(@files, @{$_->{Files}})} @{$sdkInst->{Pubs}};
+    my $instName = $sdkInst->{PubBase};
+    my $pubsForThisInstance = scalar(@{$sdkInst->{Pubs}});
+</%perl>
+
+<%script router-num="$rtrNum" type="linux" instance="$instName">
+% Msg("Starting sdkperf instance \"$sdkInst->{PubBase}\" on router $rrsRouterName...");
+cd /root/sdkperf.install.<% $release %>
+source SOURCE_ME
+<%script router-num="$rtrNum" type="linux" nowait="1" instance="$instName">
+taskset f ./sdkperf_cpp -mt=persistent -pip=<% $rutIp %> -pc=<% $pubsForThisInstance %> -pn=<% $sdkInst->{PubBase} %> -pfl=<% join(",", @files) %> -sc=0 <% $flags %> -apw=<% $pw %> -mr=<% $mr/$pc %> -mn=<% int($mn/$pc*$pubsForThisInstance) %>
+    
+<%perl>
+  }
+
+} # LaunchSdkperfPubs #
+
+
+##############################################################################
+## LaunchSdkperfSubs - 
+##
+##############################################################################
+sub LaunchSdkperfSubs {
+  my ($rtrNum) = @_;
+
+  my $flags = '-q -awt=60 -tnd -d -sca -asa=1500 -nsr';
+
+  my $rutIp = "192.168.". ($rrsRouterNetNums[0] == 128 ? "160" : "164") .".$rrsRouterNums[0]";
+
+  foreach my $sdkInst (@{$cfg[$rtrNum]}) {
+    my @subs;
+    # $cfg[$host+$firstPerfHost][$sdkInstance]{Subs}[$pubNum]{Subscription} = sprintf("/a${host}_${sdkInstance}_%04d", $pubNum+1);
+    map {push(@subs, $_->{SubFileName})} @{$sdkInst->{Subs}};
+    my $instName = $sdkInst->{SubBase};
+    my $subsForThisInstance = scalar(@{$sdkInst->{Subs}});
+</%perl>
+
+<%script router-num="$rtrNum" type="linux" instance="$instName">
+% Msg("Starting sdkperf instance \"$sdkInst->{SubBase}\" on router $rrsRouterName...");
+cd /root/sdkperf.install.<% $release %>
+source SOURCE_ME
+<%script router-num="$rtrNum" type="linux" nowait="1" instance="$instName">
+taskset f ./sdkperf_cpp -mt=persistent -pip=<% $rutIp %> -pc=0 -sc=<% $subsForThisInstance %> -sn=<% $sdkInst->{SubBase} %> -sxf="<% join(",", @subs) %>" <% $flags %> -asw=<% $sw %>  -mn=<% int($mn/$pc*$subsForThisInstance - 100) %>
+    
+<%perl>
+  }
+
+} # LaunchSdkperfSubs #
+
+
+##############################################################################
+## WaitForPubs - 
+##
+## This will check all the publisher processes and wait for them to complete. 
+##
+##############################################################################
+sub WaitForPubs {
+  my ($rtrNum) = @_;
+
+  foreach my $sdkInst (@{$cfg[$rtrNum]}) {
+    my $instName =  $sdkInst->{PubBase};
+    # This will see if there is a full result available from the pub.  
+    do {
+      # Msg("Checking for pub $instName\n");
+</%perl>
+<%script router-num="$rtrNum" type="linux" check_for_result="1" instance="$instName" timeout="1">
+<%perl>    
+      select(undef, undef, undef, 0.05);
+    } while (!defined $rrsLastResult || $rrsLastResult eq "");
+
+    # Extract the pub rate from the result
+    my ($rate) = ($rrsLastResult =~ /Computed publish rate[^=]* = ([0-9\.]+)/);
+
+    if (defined($rate)) {
+      $aggPubRate += $rate;
+    }
+    else {
+      Error("Couldn't extract a pub rate from the result: $rrsLastResult");
+    }
+
+    print "Received result from pub instance $instName\n";
+  }
+
+} # WaitForPubs #
+
+
+##############################################################################
+## WaitForSubs - 
+##
+## This will check all the subscribers processes and wait for them to complete. 
+##
+##############################################################################
+sub WaitForSubs {
+  my ($rtrNum) = @_;
+
+  foreach my $sdkInst (@{$cfg[$rtrNum]}) {
+    my $instName =  $sdkInst->{SubBase};
+    # This will see if there is a full result available from the sub.  
+    do {
+      # Msg("Checking for sub $instName\n");
+</%perl>
+<%script router-num="$rtrNum" type="linux" check_for_result="1" instance="$instName">
+<%perl> 
+      select(undef, undef, undef, 0.05);
+    } while (!defined $rrsLastResult || $rrsLastResult eq "");
+
+    # Extract the sub rate from the result
+    my ($rate) = ($rrsLastResult =~ /Computed subscriber rate[^=]* = ([0-9\.]+)/);
+
+    if (defined($rate)) {
+      $aggSubRate += $rate;
+    }
+    else {
+      Error("Couldn't extract a sub rate from the result: $rrsLastResult");
+    }
+
+    print "Received from sub instance $instName\n";
+  }
+
+} # WaitForSubs #
+
+
+
+</%perl>

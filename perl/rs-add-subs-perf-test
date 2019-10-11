@@ -1,0 +1,73 @@
+#!/usr/bin/env run-router-script
+#
+#  This script will add the specified number of subs with the specified prefix
+#  to the router in a way that is compatible with our performance testing.
+#
+<%args>
+$sc      => 1000  # Number of subscribers to add
+$nrp     => 4     # Number of subscriber only rtrperfs
+$max_last_sub => 10000
+$profile_name => "Perf_3_1_TCP"
+</%args>
+
+<%perl>
+my @subs = ("P1perfTcp0001");
+my $count = 0;
+my @counts;
+for my $i (1 .. int($sc)) {
+  for my $j (1 .. $nrp) {
+    if ($count >= $sc - 2) { last; }
+    if ($j == $nrp && $counts[$j] >= $max_last_sub) { last; }
+    $count++;
+    $counts[$j]++;
+    push(@subs, "S${j}perfTcp". sprintf("%04d", $i));
+  }
+  if ($count >= $sc - 2) { last; }
+}
+push(@subs, "P1perfTcp0002");
+</%perl>
+
+# Basic setup
+<& rs-config-if &>
+<& rs-no-authentication &>
+
+# Remove existing subscribers
+<& rs-rm-all-subs &>
+
+# Remove existing publishers
+<& rs-rm-all-pubs &>
+
+# Setup some typical profiles
+<& rs-typical-profile, profile=>$profile_name &>
+
+# Add the pubs
+<& rs-add-pubs, pn=>"P1perfTcp", pc=>2, profile=>$profile_name &>
+
+enable
+con t
+
+# Add the subs
+% for my $sub (@subs) {
+subscriber <% $sub %>
+profile <% $profile_name %>
+subscription xpe /*
+exit
+% }
+
+end
+exit
+
+% print "\n\nDistribution of subscribers:\n\n";
+% for my $j (1 .. $nrp) {
+%   printf("PerfHost $j:  Subscribers S${j}perfTcp0001 to S${j}perfTcp%04d\n", $counts[$j]);
+% }
+
+% print "\n\nPossible rtrperf command lines:\n\n";
+% my $ip = "192.168.". (($rrsRouterNetNum == 128) ? "160" : "164") .".$rrsRouterNum";
+% print "Subscriber only:\n";
+% for my $j (1 .. $nrp) {
+%   printf("./rtrperf -pip=$ip:55555 -pc=0 -sc=$counts[$j] -sn=S${j}perfTcp -nad -sxl=\n");
+% }
+
+% print "\nPublisher and subscriber:\n";
+% print "./rtrperf -pip=$ip:55555 -pc=2 -pn=P1perfTcp -sn=P1perfTcp -sc=2 -nad -l -sxl= -mr=<rate> -mn=<num>\n";

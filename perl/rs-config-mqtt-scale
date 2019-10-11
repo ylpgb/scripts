@@ -1,0 +1,61 @@
+#!/usr/bin/env run-router-script
+#
+#  Configure MQTT for the router
+#
+<%args>
+vn         => "scale" # VPN name
+sc         => 10 # MQTT Session count
+sn         => mqtt-session # Session name prefix
+pc         => 1  # profile count
+pn         => mqtt-profile # Profile name prefix
+tc         => 1  # Number of topics / session / QOS
+</%args>
+
+<%script type = "cli">
+% for my $profileId (1 .. $pc)
+%{
+home
+enable
+configure
+create client-profile "<% $pn %>-<% $profileId %>" message-vpn <% $vn %>
+message-spool allow-guaranteed-endpoint-create 
+message-spool allow-guaranteed-message-receive 
+message-spool allow-guaranteed-message-send
+%}
+
+% for my $userId (1 .. $sc)
+%{
+home
+enable
+configure
+create client-username "<% $sn %>-<% $userId %>-username" message-vpn "<% $vn %>"
+client-profile "<% $pn %>-<% ($userId % $pc) + 1 %>" 
+%}
+
+# For Cli_regular test
+% for my $sessionId (1 .. $sc)
+%{
+home
+enable
+configure
+message-vpn <% $vn %>
+mqtt
+create mqtt-session <% $sn %>-<% $sessionId %>
+owner <% $sn %>-<% $sessionId %>-username
+no shutdown
+
+% for my $qos (0, 1) 
+%{
+% for my $topicId (1 .. $tc)
+%{
+
+    create subscription "MQTT/<% $topicId %>/<% $qos %>" 
+    qos <% $qos %>
+    exit
+%}
+%}
+
+
+%}
+
+

@@ -1,0 +1,157 @@
+#!/usr/bin/env run-router-script
+#
+#  This script will periodically read various stats and 
+#  display them on the screen
+#
+#
+<%args>
+$interval => 1            # Polling interval in seconds
+$timestamp => 0           # Output timestamp
+</%args>
+
+<%perl>
+
+no warnings;
+
+RrsShowOutput(0);
+RrsSetTimeout(30);
+use Term::ReadKey;
+use Time::HiRes qw( gettimeofday );
+
+my $pause = 0;
+
+my %adStats = (
+  total =>       "Number of Ingress Messages",
+  noElig =>      "No Eligible Destinations",
+  demoted =>     "Demoted to Direct",
+  adbCount =>    "Messages Spooled to ADB",
+  ingDiscards => "Ingress Messages Discarded"
+);
+
+my %clientStats = (
+   congestion => "Message Spool Congestion"
+);
+
+my %state;
+my $lastTime;
+
+
+
+# Get the CLI into enabled mode
+</%perl>
+enable
+<%perl>
+
+
+while (1) {
+
+  if ($timestamp) {
+    my $time = localtime(time());
+    print "TIME: $time\n";
+  }
+
+  RunCommand();
+
+  ReadMode 4;
+  my $char = ReadKey($interval);
+  ReadMode 0;
+  if (defined $char) {
+     if ($char eq " ") { 
+       Pause(); 
+     }
+     elsif ($char eq "") {
+       last;
+     }
+  }
+
+}
+
+print "Quitting...\n";
+RrsExit();
+
+
+sub RunCommand {
+  my $t     = gettimeofday();
+  my $delta = $t - $lastTime;
+  $lastTime = $t;
+
+</%perl>
+
+<% script type="cli" %>
+show message-spool stats
+   
+<%perl>
+
+  foreach my $stat (keys(%adStats)) {
+    my ($val) = ($rrsLastResult =~ /$adStats{$stat}:\s*(\d+)/);
+    $state{$stat}{currRate} = ($val - $state{$stat}{last})/$delta;
+    $state{$stat}{avg}      = $state{$stat}{avg} * 0.975 + $state{$stat}{currRate} * 0.025;
+    $state{$stat}{last}     = $val;
+  }
+
+</%perl>
+show stats client detail
+<%perl>
+
+  foreach my $stat (keys(%clientStats)) {
+    my ($val) = ($rrsLastResult =~ /$clientStats{$stat}\s*(\d+)/);
+    $state{$stat}{currRate} = ($val - $state{$stat}{last})/$delta;
+    $state{$stat}{avg}      = $state{$stat}{avg} * 0.975 + $state{$stat}{currRate} * 0.025;
+    $state{$stat}{last}     = $val;
+  }
+
+  my $total   = $state{total}{currRate};
+  my $useful  = $state{adbCount}{currRate};
+
+  foreach my $rate (qw{currRate avg}) {
+    $state{useless}{$rate} = $state{demoted}{$rate} + $state{ingDiscards}{$rate};
+  }
+
+  printf("Spooled messages/s:      %s    %s\n", FormatRate("adbCount", "currRate"), FormatRate("adbCount", "avg"));
+  printf("Discarded messages/s:    %s    %s\n", FormatRate("useless", "currRate"), FormatRate("useless", "avg"));
+  printf("Total messages/s:        %s    %s\n", FormatRate("total", "currRate"), FormatRate("total", "avg"));
+  printf("Congestion discards/s:   %s    %s\n\n", FormatRate("congestion", "currRate"), FormatRate("congestion", "avg"));
+
+
+}
+
+
+sub Pause {
+
+  print "\nPaused...  Hit any key to resume\n";
+  ReadMode 4;
+  my $char = ReadKey(9999999999);
+  ReadMode 0;
+
+}
+
+sub FormatRate() {
+  my ($stat, $rate) = @_;
+  my $val = $state{$stat}{$rate};
+  my $suffix = " ";
+
+  if ($val > 10000000000) {
+    $val /= 1000000000;
+    $suffix = "G";
+  }
+  elsif ($val > 10000000) {
+    $val /= 1000000;
+    $suffix = "M";
+  }
+  elsif ($val > 10000) {
+    $val /= 1000;
+    $suffix = "K";
+  }
+
+  my $unit = $rate;
+  if ($rate eq "currRate") {
+    $unit = "1s";
+  }
+
+  return sprintf("%9.1f$suffix (%s)", $val, $unit);
+
+}
+
+
+
+</%perl>

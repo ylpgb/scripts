@@ -1,0 +1,90 @@
+#!/usr/bin/env run-router-script
+#
+#  This script will add the specified number of rest delivery points (RDP)
+#  to the router.
+#
+<%args>
+$rn => "rdp"         # Prefix string for the RDP 
+$rc                  # Number of RDPs to add 
+$msgVpn => "default" # Message Vpn for the RDP
+$vn     => ""        # Prefix for VPN. If set, creates each RDP in a different VPN 
+$qbc => 1            # Number of queue bindings per RDP
+$qn => "q"           # Prefix string for queue bindings
+$twoIdxQs => "0"     # Flag to indicate to use queue name with 2 indexes (ex q0000100003)
+$rcn => "rc"         # Prefix string for rest consumers 
+$rcc => 1            # Number of rest consumers per RDP
+$rch                 # Remote consumer host
+$pru                 # POST request URI/target string
+$rcp => ""           # Remote consumer port
+$srcp => ""          # Remote consumer port
+$rcoc => ""          # Remote consumer outgoing connection count
+$cp => ""            # Client profile for RDP 
+$noCreate => 0       # Flag to turn off creation of RDPs
+$sc => 1             # Starting value for loop counter
+$zf => 1             # Want zero fill names.
+</%args>
+% my $qidx = 1;
+% if (!($rcp || $srcp)) { print "ERROR: One of rcp or srcp must be entered\n"; exit}
+% my $port;
+% if ($srcp) {$port =$srcp} else {$port = $rcp}
+
+enable
+con t
+
+% if (!$vn) {
+    message-vpn <% $msgVpn %>
+    rest
+% }
+
+% for my $i ($sc .. ($sc +$rc - 1)) {
+
+% if ($vn) {
+    message-vpn <% $vn . (($zf) ? sprintf("%05d", $i) : sprintf("%d", $i)) %>
+    rest
+% }
+
+# Create the RDP
+<% ($noCreate) ? "" : "create" %> rest-delivery-point <% $rn . (($zf) ? sprintf("%05d", $i) : sprintf("%d", $i)) %>  
+% if ($cp ne "") {
+client-profile <% $cp %>
+% }
+
+
+# Create the queue bindings
+% for my $j (1 .. $qbc) {
+
+% if ($twoIdxQs eq 1) {
+<% ($noCreate) ? "" : "create" %> queue-binding <% $qn . (($zf) ? sprintf("%05d%05d", $i, $j) : sprintf("%d%d", $i,$j)) %>  
+% } else {
+<% ($noCreate) ? "" : "create" %> queue-binding <% $qn . (($zf) ? sprintf("%05d", $qidx) : sprintf("%d", $qidx)) %>  
+% }
+post-request-target <% $pru %>
+exit
+% $qidx++;
+% }
+
+# Create the rest consumers 
+% for my $k (1 .. $rcc) {
+<% ($noCreate) ? "" : "create" %> rest-consumer <% $rcn . (($zf) ? sprintf("%05d%05d", $i, $k) : sprintf("%d%d", $i,$k)) %>  
+remote host <% $rch %> 
+remote port <% $port %> 
+% if ($srcp) {$port ++} 
+% if ($rcoc ne "") {
+remote outgoing-connection-count <% $rcoc %>
+% }
+no shut
+exit
+% }
+
+no shut
+exit
+
+% if ($vn) {
+    exit 
+    exit
+% }
+
+% }
+
+end
+exit

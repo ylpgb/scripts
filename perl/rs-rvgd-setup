@@ -1,0 +1,119 @@
+#!/usr/bin/env run-router-script
+#
+#  This script:
+#  a) insures that an /etc/hosts entry exists for this router and
+#  b) modifies tmaRvGatewayNotify to have the correct parameters for the host
+#     router that it is living on.
+
+<%args>
+$primary => 1    # if non-zero, the rvgd operates on the TMA's primary VRID.
+$gwIntf => "rvgd"   # if "rvgd", the gateway uses the default eth0/eth2 rvgd interface.  If "mgmt", the gateway uses the eth1 mgmt interface.
+</%args>
+
+<%perl>
+
+#
+# *** START embedded script in $rvgdScriptModifyScript
+#
+(my $rvgdScriptModifyScript = <<'RVGD_SCRIPT_MODIFY_SCRIPT') =~ s/\'/\'\\\'\'/g;
+
+my $platform=$rrsLastResult;
+chomp($platform);
+
+my $scriptConfiguresIntf = 1;
+my $defaultGwIntf;
+if ($platform =~ m/DARWIN/) {
+    $defaultGwIntf = "eth2";
+} else {
+    $defaultGwIntf = "eth0";
+}
+
+if ($gwIntf eq "mgmt" ) {
+    $gwIntf = "eth1";
+    $scriptConfiguresIntf = 0;
+    `ifconfig $defaultGwIntf 0.0.0.0 down`
+} else {
+    $gwIntf = $defaultGwIntf;
+}
+
+# Create an IP for the gwIntf
+#
+my $gwIntfIp = "192.168.";
+if ($rrsRouterNetNum == 128) {
+    $gwIntfIp .= "162.";
+} else {
+    $gwIntfIp .= "166.";
+}
+$gwIntfIp .= "$rrsRouterNum";
+my %scriptValues = (
+    'GW_INTF='             => "\"$gwIntf\"",
+    'SCRIPT_CONFIGS_INTF=' => "$scriptConfiguresIntf",
+    'GW_INTF_IP='          => "\"$gwIntfIp\"",
+    'GW_INTF_MASK='        => "\"255.255.240.0\"",
+    'TMA_IS_PRIMARY='      => "$primary",
+);
+
+foreach my $path qw(/usr/solace/loads/currentload/scripts/tmaRvGatewayNotify
+                    /usr/solace/loads/currentload/rvgd/tmaRvGatewayNotify) {
+    if (-r $path) {
+        open(FH, "+< $path") or die "Opening $path: $!";
+        last;
+    }
+}
+my @scriptLines = <FH>;
+
+my $writeFile=0;
+for (my $linenum=0; $linenum < @scriptLines; ++$linenum) {
+    my $line = $scriptLines[$linenum];
+
+    # Check if the line matches any of the lines we're interested in
+    #
+    foreach my $key (keys(%scriptValues)) {
+        if ($line =~ m/^$key/) {
+            if ($line !~ m/$key\$scriptValues{$key}/) {
+                $scriptLines[$linenum] = sprintf("%s%s\n", $key, $scriptValues{$key});
+                $writeFile=1;
+            }
+            # Once we match one of the keys, we don't need to look for others;
+            # we're done with this line.
+            #
+            last;
+        }
+    }
+}
+
+# If there was a change, write the new file
+#
+if ($writeFile) {
+    seek(FH,0,0);
+    print FH @scriptLines;
+    truncate(FH, tell(FH));
+}
+close(FH);
+RVGD_SCRIPT_MODIFY_SCRIPT
+#
+# *** END embedded script in $rvgdScriptModifyScript
+#
+
+#
+# *** START normal execution
+#
+RrsShowOutput(0);
+</%perl>
+
+<%script type="linux"/>
+
+# Run the script to make sure the tmaRvGatewayNotify has the correct arguments
+#
+# Figure out if we're a Darwin or Jarrell to know if we should use eth2 or
+# eth0; pass the platform as $rrsLastResult.
+#
+/usr/solace/loads/currentload/scripts/getPlatform.pl -v
+
+# Run the script to modify the rvgd script on the router
+#
+perl -e 'use strict; my $primary="<% $primary %>"; my $gwIntf="<% $gwIntf %>"; my $rrsLastResult="<% $rrsLastResult %>"; my $rrsRouterNetNum="<% $rrsRouterNetNum %>"; my $rrsRouterNum="<% $rrsRouterNum %>"; <% $rvgdScriptModifyScript %>'
+
+<%perl>
+RrsShowOutput(1);
+</%perl>

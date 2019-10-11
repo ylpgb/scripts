@@ -1,0 +1,131 @@
+#!/usr/bin/env run-router-script
+<%args>
+  $numdests => 8  # Number of destinations to have in the looped back data
+</%args>
+
+<%perl>
+
+my $trmBar0 = findBar([0x06001172],0);
+my $trmBar1 = findBar([0x06001172],1);
+
+my $octBar0 = findBar([0x0003177d, 0x0004177d, 0x1001177d, 0x0040177d], 0);
+my $octBar1 = findBar([0x0003177d, 0x0004177d, 0x1001177d, 0x0040177d], 2) + (28 << 22);
+
+my $slot = getTrmSlot();
+
+</%perl>
+
+
+
+%# Setup the TMR
+<%script type="linux">
+
+cd /usr/solace/loads/currentload/firmware
+
+%# Take out of reset
+./solapp -s <% $slot %> -w 1 0x0 1
+
+%# EMR_API_EGQ_PHYS_ADDR
+% my $offset = getOctOffset("T2O Result FIFO");
+./solapp -s <% $slot %> -w 1 0x6024 <% sprintf("0x%x", $octBar1 + $offset) %>
+
+%# EMR_API_INQ_STATUS_PTR	
+% $offset = getOctOffset("O2T Remote FIFO Read Pointer");
+./solapp -s <% $slot %> -w 1 0x603c <% sprintf("0x%x", $octBar1 + $offset) %>
+
+%# EMR_API_EGQ_SIZE 
+./solapp -s <% $slot %> -w 1 0x6028 10000 
+
+%# Configure the loopback
+<& rs-config-trm-loopback, numdests => $numdests &>
+
+%# Setup the Octeon Config
+% $offset = getOctOffset("O2T Remote FIFO Address");
+oct-pci-memory <% sprintf("0x%x", $offset) %> <% sprintf("0x%x", $trmBar1) %>
+
+% $offset = getOctOffset("T2O Read Pointer Update Address");
+oct-pci-memory <% sprintf("0x%x", $offset) %> <% sprintf("0x%x", $trmBar0 + 0x6018) %>
+
+
+
+
+<%perl>
+
+  # Search through the PCI devices for a device in the idList and then
+  # return the address of the specified BAR
+  sub findBar {
+    my ($idList, $barNum) = @_;
+
+    
+    RrsShowOutput(0);
+</%perl>
+<%script type="linux">
+lspci -x
+<%perl>
+    RrsShowOutput(1);
+
+    while ($rrsLastResult =~ /(?:^|\n)([0-9a-f]+:[0-9a-f]+\.[0-9a-f]+).*\n00: ([0-9a-f]+ [0-9a-f]+ [0-9a-f]+ [0-9a-f]+).*\n10: ([0-9a-f]+ [0-9a-f]+ [0-9a-f]+ [0-9a-f]+) ([0-9a-f]+ [0-9a-f]+ [0-9a-f]+ [0-9a-f]+) ([0-9a-f]+ [0-9a-f]+ [0-9a-f]+ [0-9a-f]+)/g) {
+      my $pciId = getNum($2);
+      foreach my $id (@{$idList}) {
+        if ($pciId == $id) {
+          if ($barNum == 0) { return (getNum($3) & 0xffffff00); }
+          if ($barNum == 1) { return (getNum($4) & 0xffffff00); }
+          if ($barNum == 2) { return (getNum($5) & 0xffffff00); }
+        } 
+      }
+    }
+
+    print "ERROR: Couldn't find bar $barNum for PCI IDs [ @{$idList} ]\n";
+    exit;
+    
+  }
+
+
+  sub getNum {
+    my ($hexStr) = @_;
+    
+    my @nums = split(/ /, $hexStr);
+    
+    return eval("0x$nums[3]$nums[2]$nums[1]$nums[0]");
+  
+  }
+
+  sub getOctOffset {
+    my ($name) = @_;
+    
+    RrsShowOutput(0);
+</%perl>
+<%script type="linux">
+oct-pci-memmap
+<%perl>
+    RrsShowOutput(1);
+  
+    my ($addr) = ($rrsLastResult =~ /(0x[^\s]+)\s+(0x[^\s]+)\s* \d+\s*$name/);
+
+    return eval($addr);
+
+  }
+
+  sub getTrmSlot {
+
+    RrsShowOutput(0);
+</%perl>
+<%script type="linux">
+cat /proc/solace/3200
+<%perl>
+    RrsShowOutput(1);
+
+    my ($slot) = ($rrsLastResult =~ /(\d+)  3210/);
+    
+    print "Found slot: $slot\n";
+    if (!defined $slot) {
+      print "ERROR:  Couldn't find TRM slot number\n";
+      exit;
+    }
+
+    return $slot;
+
+  }
+
+
+</%perl>

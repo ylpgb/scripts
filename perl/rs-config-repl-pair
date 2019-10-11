@@ -1,0 +1,40 @@
+#!/usr/bin/env run-router-script
+#
+#  Configure different aspects of replication on a replication pair
+#
+<%args>
+shutdown   => ""          # Shutdown VPN pattern (e.g. "vpn-*")
+active     => ""          # Active VPN pattern (e.g. "vpn-*")
+standby    => ""          # Standby VPN pattern (e.g. "vpn-*")
+cu         => "default"   # Replication bridge client-username
+</%args>
+
+# Validate that we have a pair of routers to configure
+<%perl>
+if ($rrsNumRouters != 2) {
+    Fatal "Must give exactly 2 routers.  $rrsNumRouters have been given";
+}
+</%perl>
+
+# Need to do a command to the second router so that $rrsRouterNames[1] will be
+# initialized
+<%script router-num="1" type = "cli">
+home
+
+# Config the repl pair.  Each is the mate of the other, and each gets
+# the opposite active/standby pattern of the other (and same shutdown
+# pattern).
+
+<%script router-num="0" type = "cli">
+<& rs-config-repl, selfIdx => "0", mateIdx => "1",
+                   shutdown => $shutdown,
+                   active => $active,
+                   standby => $standby,
+                   cu => $cu &>
+<%script router-num="1" type = "cli">
+<& rs-config-repl, selfIdx => "1", mateIdx => "0",
+                   shutdown => $shutdown,
+                   active => $standby,
+                   standby => $active,
+                   cu => $cu &>
+

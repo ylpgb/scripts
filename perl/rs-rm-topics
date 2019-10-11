@@ -1,0 +1,27 @@
+#!/usr/bin/env run-router-script
+#
+#  This script will add the specified number of subs with the specified prefix
+#  to the router.
+#
+<%args>
+$tn                  # Prefix string for the clients
+$tc                  # Number of clients to add
+$msgVpn => default   # messageVpn
+</%args>
+
+enable
+con t
+message-spool message-vpn <% $msgVpn %>
+
+% for my $i (1 .. $tc) {
+
+% my $te = $tn . sprintf("%05d", $i);
+topic-endpoint <% $te %>
+shut
+exit
+no topic-endpoint <% $te %>
+
+% }
+
+end
+exit

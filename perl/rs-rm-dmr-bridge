@@ -1,0 +1,44 @@
+#!/usr/bin/env run-router-script
+#
+
+# Remove a DMR bridge between 2 routers.
+#
+
+<%args>
+vn          => "default"     # single "vpn-1" name or pair "vpn-1,vpn-2"
+</%args>
+
+% use Data::Dumper;
+
+<%perl>
+if ($rrsNumRouters != 2) {
+    die "Must give exactly 2 routers.  $rrsNumRouters have been given";
+}
+</%perl>
+
+% RrsShowOutput(1);
+
+% my $rn0 = $rrsRouterNames[0];
+% my $rn1 = $rrsRouterNames[1];
+
+% my @vpns = split(/,/,$vn);
+
+% my $vn0 = $vpns[0];
+% my $vn1 = $vpns[1];
+
+<%script router-num="0" type="cli">
+home
+enable
+configure
+message-vpn <% $vn0 %>
+dynamic-message-routing
+no dmr-bridge <% $rn1 %>
+
+<%script router-num="1" type="cli">
+home
+enable
+configure
+message-vpn <% $vn1 %>
+dynamic-message-routing
+no dmr-bridge <% $rn0 %>
+

@@ -1,0 +1,52 @@
+#!/usr/bin/env run-router-script
+#
+#  This script will add the specified number of client-usernames 
+#  to the router.
+#
+
+<%args>
+$un => ""            # String for the client-usernames
+$up => ""            # Prefix string for the client-usernames
+$uc                  # Number of client-usernames to add
+$vn => "default"     # String for the message-vpn
+$vp => ""            # Prefix string for the message-vpn
+$pn => "default"     # String for the client-profile
+$pp => ""            # Prefix string for the client-profile
+$zf => 1             # Want zero fill names
+$zfsize => 5         # how much to pad the zero fill
+</%args>
+
+enable
+con t
+
+% if ($un || $up) {
+
+% for my $i (1 .. $uc) {
+
+% if ($up) {
+%   if ($vp) {
+      create client-username <% $up . (($zf) ? sprintf("%0${zfsize}d", $i) : sprintf("%d", $i)) %> message-vpn <% $vp . (($zf) ? sprintf("%0${zfsize}d", $i) : sprintf("%d", $i)) %>
+%   } elsif ($vn) {
+      create client-username <% $up . (($zf) ? sprintf("%0${zfsize}d", $i) : sprintf("%d", $i)) %> message-vpn <% $vn %>
+%   }
+% } elsif ($un) {
+%   if ($vp) {
+      create client-username <% $un %> message-vpn <% $vp . (($zf) ? sprintf("%0${zfsize}d", $i) : sprintf("%d", $i)) %>
+%   } elsif ($vn) {
+      create client-username <% $un %> message-vpn <% $vn %>
+%   }
+% }
+% if ($pp) {
+    client-profile <% $pp . (($zf) ? sprintf("%0${zfsize}d", $i) : sprintf("%d", $i)) %>
+% } elsif ($pn) {
+    client-profile <% $pn %>
+% }
+no shut
+exit
+
+% }
+
+% }
+
+end
+exit

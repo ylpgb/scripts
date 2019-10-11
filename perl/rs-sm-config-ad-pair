@@ -1,0 +1,74 @@
+#!/usr/bin/env run-router-script
+#
+
+<%args>
+amr      => 1         # Issue 'assert-master' for router table
+amv      => "default" # Issue 'assert-master' for VPN table's matching pattern
+</%args>
+
+
+<%perl>
+if ($rrsNumRouters != 2) {
+    die "Must give exactly 2 routers.  $rrsNumRouters have been given";
+}
+</%perl>
+
+<%script router-num="1" type = "cli">
+enable
+configure
+show router-name
+% my ($rn1) = ($rrsLastResult =~ /Router Name: +(.*)/);
+
+
+<%script router-num="0" type = "cli">
+enable
+configure
+
+show router-name
+% my ($rn0) = ($rrsLastResult =~ /Router Name: +(.*)/);
+
+show service
+% my ($port) = ($rrsLastResult =~ /SMF .*MsgBB +(\d+)/);
+
+hardware message-spool internal-disk
+no hardware message-spool shutdown primary
+redundancy mate-router-name <% $rn1 %>
+redundancy vrrp-vrid 123 primary
+redundancy vrrp-vrid 234 backup
+no redundancy shutdown
+no config-sync shutdown
+
+!! Allow AD stuff
+home
+enable
+configure
+client-profile default message-vpn default
+message-spool allow-guaranteed-endpoint-create
+message-spool allow-guaranteed-message-send
+message-spool allow-guaranteed-message-receive
+message-spool allow-transacted-sessions
+
+<%script router-num="1" type = "soldebug">
+:conn 1
+cfgSyncSessionRemotePort <% $port %>
+
+<%script router-num="1" type = "cli">
+hardware message-spool internal-disk
+no hardware message-spool shutdown backup
+redundancy mate-router-name <% $rn0 %>
+redundancy vrrp-vrid 234 primary
+redundancy vrrp-vrid 123 backup
+no redundancy shutdown
+no config-sync shutdown
+
+<%script router-num="0" type = "cli">
+home
+enable
+admin
+% if ($amr) {
+config-sync assert-master router
+% }
+% if ($amv) {
+config-sync assert-master message-vpn <% $amv %>
+% }
+

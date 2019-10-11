@@ -1,0 +1,180 @@
+#!/usr/bin/env run-router-script
+#
+#  This script will add the specified number of subs with the specified prefix
+#  to the router.
+#
+<%args>
+$vpn        => ""       # An existing VPN to churn 
+$file       => ""       # A file name that contains the VPN configuration
+$randFlag   => 1        # Flag to indicate the script should toggle random VPNs
+interval    => "20"     # Time interval for the toggle
+
+</%args>
+
+% use List::Util qw( shuffle );
+# Increase the command timeout in case the VPNs are large
+% RrsSetTimeout(30); 
+# Disable the displaying of the commands
+% RrsShowOutput(1);
+
+enable
+
+# If a file is specified, source it first to add the configuration to the system
+% if ($file) {
+    # If the vpn exists, delete it
+    show current-config message-vpn <% $vpn %> remove > rs_init_rm_vpn.cfg
+    source script rs_init_rm_vpn.cfg stop no-prompt > rs_rm_init_vpn.log
+
+    # Need to first create the VPN to generate the remove
+    source script <% $file %> stop no-prompt > rs_init_create_vpn.log
+
+% }
+
+# If a VPN is specified, don't do random
+<%perl>
+my @vpnList;
+if ($vpn) {$randFlag = 0}
+</%perl>
+
+# If random, get a list of all VPNs
+
+% if ($randFlag) {
+
+show message-vpn *
+
+<%perl>
+
+    #my ($output) = ($rrsLastResult =~ /-------\s*\n(.|\n)*$/);
+
+    #print "output: $output\n";
+
+    my @output = split(/\n/, $rrsLastResult);
+
+    my ($temp, $startFlag);
+    foreach my $line (@output) {
+        if ($startFlag) {
+            if ($line !~ /N\/A/) {
+            $temp = $line =~ /^([A-Za-z0-9_-]+)\s/;
+            push (@vpnList, $1);
+            }
+        }
+        if ($line =~ /--------/) {
+            $startFlag = 1;
+
+        }
+    }
+
+} else {
+    
+    @vpnList = $vpn;
+
+}
+
+#print @vpnList;
+
+
+</%perl>
+
+% my $iter=1;
+%  while (1 == 1) {
+
+# Randomize the VPN list
+% @vpnList = shuffle @vpnList;
+
+% my $thisVpn;
+% foreach $thisVpn (@vpnList) {
+
+% print "\nLoop $iter: Saving VPN $thisVpn configuration.\n";
+
+# Make sure allow-unknow publisher flow is set
+home
+enable
+config
+message-spool message-vpn <% $thisVpn %>
+allow-unknown
+exit
+exit
+
+show current-config message-vpn <% $thisVpn %> > rs_add_<%$thisVpn%>.cfg
+
+% print "\nLoop $iter: Shutting down VPN to allow temporary endpoints to expire\n";
+home
+enable
+config
+message-vpn <% $thisVpn %>
+shutdown
+# Need to put a sleep here to make sure the script detects the prompts
+%   sleep 2 ;
+exit
+exit
+
+% print "\nLoop $iter: Waiting until there are no temporary endpoints\n";
+
+
+<%perl>
+my $tempQFlag =1;
+my $loopGuard = 0;
+my $maxLoops = 65;
+while (defined($tempQFlag) && $loopGuard < $maxLoops) {
+</%perl>
+show queue * message-vpn <% $thisVpn %> non-durable
+<%perl>
+    # Since the VPN name appears in each endpoint listed, doing a quick count
+    # of the VPN name to determine how many endpoints there are
+    ($tempQFlag) = ($rrsLastResult =~ /$thisVpn/);
+
+    sleep 1;
+    $loopGuard++;
+
+} ; # end of while tempQFlag
+
+if ($loopGuard == $maxLoops) {
+    print "ERROR: Temporary queues not gone after waiting $loopGuard seconds\n";
+}
+
+my $tempTFlag =1;
+$loopGuard = 0;
+while (defined($tempTFlag) && $loopGuard < $maxLoops) {
+</%perl>
+show topic-endpoint * message-vpn <% $thisVpn %> non-durable
+<%perl>
+    # Since the VPN name appears in each endpoint listed, doing a quick count
+    # of the VPN name to determine how many endpoints there are
+    ($tempTFlag) = ($rrsLastResult =~ /$thisVpn/);
+    sleep 1;
+    $loopGuard++;
+
+} ; # end of while tempTFlag
+
+if ($loopGuard == $maxLoops) {
+    print "ERROR: Temporary topic-endpoints not gone after waiting $loopGuard seconds\n";
+}
+
+
+</%perl>
+
+% print "Loop $iter: Removing VPN $thisVpn.\n";
+show current-config message-vpn <% $thisVpn %> remove > rs_rm_<%$thisVpn%>.cfg
+source script rs_rm_<%$thisVpn%>.cfg stop no-prompt
+
+%   sleep $interval ;
+
+% print "Loop $iter: Restoring VPN $thisVpn.\n";
+source script rs_add_<%$thisVpn%>.cfg stop no-prompt
+
+# Reset allow-unknow publisher flow 
+home
+enable
+config
+message-spool message-vpn <% $thisVpn %>
+no allow-unknown
+exit
+exit
+
+% $iter++;
+
+%   sleep $interval ;
+
+% }
+
+% }

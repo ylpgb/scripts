@@ -1,0 +1,24 @@
+#!/usr/bin/env run-router-script
+#
+#  This will do a typical router setup for most debuging
+#
+<%args>
+$pn        # Publisher prefix name
+$pc        # Number of publishers
+$sn        # Subscriber prefix name
+$sc        # Number of subscribers
+$sxl => "" # XPE for the subscribers
+</%args>
+
+% print "SXL: $sxl\n";
+<& rs-config-if &>
+<& rs-no-authentication &>
+% if ($sxl ne "") {
+  <& rs-typical-profile, cug => 1, profile => "default", cli_subs => 1 &>
+% } else {
+  <& rs-typical-profile, cug => 1, profile => "default", cli_subs => 0 &>
+% }
+<& rs-add-subs, sn => $sn, sc => $sc, profile => "default", sxl => $sxl &>
+<& rs-add-pubs, pn => $pn, pc => $pc, profile => "default" &>
+
+

@@ -1,0 +1,51 @@
+#!/usr/bin/env run-router-script
+#
+#  This script will add scaled REST to the router.
+#
+
+<%args>
+$msgVpn                     # message-vpn name, if applicable
+$deliveryPointPrefix        # prefix of name for delivery points
+$deliveryPointStartNum      # start number for name suffix for delivery points
+$deliveryPointEndNum        # end number for name suffix for delivery points
+$consumerPrefix             # prefix of name for delivery points
+$consumerStartNum           # start number for name suffix for delivery points
+$consumerEndNum             # end number for name suffix for delivery points
+$remove => "0"              # remove object (otherwise, add object)
+</%args>
+
+enable
+config
+message-vpn <% $msgVpn %>
+rest
+
+% if (!$remove) {
+%   for my $i ($deliveryPointStartNum .. $deliveryPointEndNum) {
+create rest-delivery-point <% $deliveryPointPrefix . $i %>
+exit
+%   }
+
+rest-delivery-point <% $deliveryPointPrefix. $deliveryPointEndNum %>
+%   for my $i ($consumerStartNum .. $consumerEndNum) {
+create rest-consumer <% $consumerPrefix . $i %>
+exit
+%   }
+
+% } else {
+
+rest-delivery-point <% $deliveryPointPrefix. $deliveryPointEndNum %>
+%   for my $i ($consumerStartNum .. $consumerEndNum) {
+no rest-consumer <% $consumerPrefix . $i %>
+%   }
+
+exit
+
+%   for my $i ($deliveryPointStartNum .. $deliveryPointEndNum) {
+no rest-delivery-point <% $deliveryPointPrefix . $i %>
+%   }
+
+% }
+
+end
+exit
+

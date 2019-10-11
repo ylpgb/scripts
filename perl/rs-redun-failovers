@@ -1,0 +1,77 @@
+#!/usr/bin/env run-router-script
+#
+#  This script will add the specified number of subs with the specified prefix
+#  to the router.
+#
+<%args>
+$t => 40  # Time between failovers
+$i => 1/6/lag1 # Interface
+$a => 1 # Flag for auto revert setting.  Default is to expect auto revert.
+</%args>
+
+<%perl>
+if ($a == 0 && $rrsNumRouters != 2) {
+    die "With auto revert disabled, must give exactly 2 routers.  $rrsNumRouters have been given";
+}
+</%perl>
+
+% if (!$a) {
+        <%script router-num="1" type = "cli">
+        enable
+        <%script router-num="0" type = "cli"> 
+% }
+
+enable
+
+%  while (1 == 1) {
+
+con t
+redundancy release
+
+% sleep $t;
+
+no redundancy release
+
+% if (!$a) {
+    # Allow some time for the vrrp to settle.
+%   sleep 10 ;
+    <%script router-num="1" type = "cli">
+    admin
+    redundancy revert-activity
+    end
+    <%script router-num="0" type = "cli">	
+
+% }
+
+%   sleep $t;
+
+end
+
+con t
+interface <% $i %>
+shut
+
+% sleep $t ;
+
+no shut
+
+% sleep $t ;
+
+end
+
+% if (!$a) {
+    <%script router-num="1" type = "cli">
+    admin
+    redundancy revert-activity
+    end
+
+%   sleep $t ;
+
+    <%script router-num="0" type = "cli"> 
+% }
+
+
+% }
+
+exit
+

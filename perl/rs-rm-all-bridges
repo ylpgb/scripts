@@ -1,0 +1,38 @@
+#!/usr/bin/env run-router-script
+#
+#  This will remove all publishers on the box
+#
+
+<%args>
+</%args>
+
+show bridge * 
+
+<%perl>
+
+my ($output) = ($rrsLastResult =~ /------\s*(\n(.|\n)*)$/);
+
+my @lines = ($output =~ /\n.+/g);
+
+print "------------------------------------------------------------------------\n";
+
+</%perl>
+
+en
+config 
+
+% foreach my $line (@lines) {
+%    if ($line !~ m/^\n(#|\s)/) {
+%    my ($bridge, $vpn) = $line =~ m/\n([A-Za-z0-9_]+)\s+([A-Za-z0-9_]+)\s/;
+#%    print "$bridge, $vpn\n";
+    bridge <% $bridge %>  message-vpn <% $vpn %>
+    shut
+    exit
+    no bridge <% $bridge %>  message-vpn <% $vpn %>
+%    }
+
+% }
+
+end
+
+

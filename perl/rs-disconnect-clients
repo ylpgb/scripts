@@ -1,0 +1,31 @@
+#!/usr/bin/env run-router-script
+#
+#  This script will continuously administratively disconnect the given client(s)
+#
+<%args>
+cn  =>  "*"         # Client Name Pattern
+vpn =>  "default"   # Message VPN
+int =>  "10"        # Time interval for administratively disconnecting
+v  =>  "1"          # verbose.  I don't want logging in system-test; it will overwhelm the client files.
+</%args>
+
+% RrsSetTimeout(40); 
+% RrsShowOutput($v);
+
+enable
+admin
+client <% $cn %> message-vpn <% $vpn %>
+
+<%perl>
+my $counter=1;
+while (1 == 1) {
+</%perl>
+
+disconnect
+
+<%perl>
+sleep $int;
+print "End of loop $counter\n";
+$counter++;
+}
+</%perl>

@@ -1,0 +1,64 @@
+#!/usr/bin/env run-router-script
+#
+#  Examine the router and clear the lost message events on all caches
+#
+<%args>
+</%args>
+
+% RrsSaveShowOutput();
+% RrsShowOutput(0);
+
+enable
+admin
+
+# Get the distributed caches
+% print "\nLooking for events to clear...\n";
+
+# Get all the cache instances
+show cache-instance * detail
+
+<%perl>
+my %instance;
+my %lookup;
+my ($currInst, $currDc, $currVpn, $currCc, $lostMsg);
+foreach my $line (split(/\n/, $rrsLastResult)) {
+  if ($line =~ /Cache Instance\s*:\s*([\w\d_\-]+)/) {
+    $currInst = $1;
+  }
+  elsif ($line =~ /Distributed Cache\s*:\s*([\w\d_\-]+)/) {
+    $currDc = $1;
+  }
+  elsif ($line =~ /Message VPN\s*:\s*([\w\d_\-]+)/) {
+    $currVpn = $1;
+  }
+  elsif ($line =~ /Cache Cluster\s*:\s*([\w\d_\-]+)/) {
+    $currCc = $1;
+  }
+  elsif ($line =~ /Lost Message\s*:\s*(Yes|No)/i) {
+    $lostMsg = $1;
+  }
+  elsif ($line =~ /Last Heartbeat/) {
+    if (defined $currInst) {
+      $instance{$currInst} = {Dc => $currDc, Vpn => $currVpn, Cc => $currCc, LostMsg => $lostMsg};
+      if ($lostMsg =~ /yes/i) {
+        print "Clearing lost message event for $currInst\n";
+      }
+      undef $currInst;
+    }
+  }
+
+}
+
+</%perl>
+
+%# First shutdown all the cache instances
+% foreach my $inst (keys(%instance)) {
+%   if ($instance{$inst}{LostMsg} =~ /yes/i) {
+      distributed-cache <% $instance{$inst}{Dc} %> message-vpn <% $instance{$inst}{Vpn} %> 
+        clear-event lost-message
+      exit
+%   }
+% }
+
+
+% RrsRestoreShowOutput();

@@ -1,0 +1,54 @@
+#!/usr/bin/env run-router-script
+#
+#  Configure MQTT for the router
+#
+<%args>
+vn         => "default" # VPN name
+port       => 1883      # listen port
+ad         => 1
+</%args>
+
+<%script type = "cli">
+home
+enable
+show session
+
+% my ($sessionNum) = ($rrsLastResult =~ /.*\* +(\d+)/);
+
+<%script type = "soldebug">
+:conn 0, <% $sessionNum-1 %>
+prodKeyAllowMqttWithoutHwSupport 1
+
+<%script type = "cli">
+admin
+product-key FLJmQuzHJ8M-x8ytouf2XKg-S67biO0krDs-MQTT-G-SOLDEV
+
+home
+enable
+configure
+
+no service mqtt shutdown
+
+% if ($ad) {
+hardware message-spool internal
+no hardware message-spool shutdown primary
+message-spool message-vpn default
+max-spool-usage 100
+% }
+
+home
+enable
+configure
+client-profile default message-vpn default
+message-spool allow-guaranteed-endpoint-create 
+message-spool allow-guaranteed-message-receive 
+message-spool allow-guaranteed-message-send
+
+home
+enable
+configure
+message-vpn <% $vn %>
+service mqtt
+plain-text shutdown
+listen-port <% $port %>
+no plain-text shutdown

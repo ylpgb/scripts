@@ -1,0 +1,15 @@
+#!/usr/bin/env run-router-script
+#
+# Creates a cluster of routers.
+#
+# OBSOLETE: use the following instead:
+#
+#  rs-config-dmr
+#  rs-rm-dmr
+#  rs-config-dmr-bridge
+#  rs-rm-dmr-bridge
+#
+<%args>
+</%args>
+
+% print("Obsolete! See help to know what to do!\n");

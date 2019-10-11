@@ -1,0 +1,146 @@
+#!/usr/bin/env run-router-script
+#
+#  This will create and configure a VPN as per the DBus solution.
+#
+#  This includes creation of a distributed cache with two cache
+#  instances, creation of client-usernames for the distributed
+#  cache, and creation of a client username for use by the
+#  DB management utilities. 
+#
+#  May be invoked with either a single or multiple routers in the
+#  router list, nodeIndex indicates the router to be operated upon.
+#
+<%args>
+vpn       => dbus         # VPN to create
+nodeIndex => 0            # which router to configure
+</%args>
+
+% my $distCache_tmp = ($vpn); 
+% my $distCache = $vpn . "_cache"; 
+% my $cacheCluster = $distCache . "_cluster"; 
+% my $cacheInstance1 = $distCache . "_instance1"; 
+% my $cacheInstance2 = $distCache . "_instance2"; 
+% my $solrelayInstance1 = $vpn . "_solrelay_instance1"; 
+% my $solrelayInstance2 = $vpn . "_solrelay_instance2"; 
+% my $mgmtUser = $vpn . "_mgmt_user"; 
+
+# need to do at least one command to get $rrsRouterName initialized
+<%script router-num="$nodeIndex" type="cli">
+enable
+config
+
+create message-vpn <% $vpn %>
+% if ($rrsLastResult =~ /exists/) {
+  message-vpn <% $vpn %>
+% }
+
+authentication user-class client
+auth-type none
+exit
+exit
+distributed-cache-management
+no shutdown
+end
+
+config
+message-spool message-vpn <% $vpn %>
+max-spool-usage 800000 
+end
+
+config
+create distributed-cache <% $distCache %> message-vpn <% $vpn %>
+% if ($rrsLastResult =~ /exists/) {
+  distributed-cache <% $distCache %> message-vpn <% $vpn %>
+% }
+
+create cache-cluster <% $cacheCluster %>
+% if ($rrsLastResult =~ /exists/) {
+  cache-cluster <% $cacheCluster %>
+% }
+
+max-topics 1000
+
+topic DB_CHANNEL_CONFIG
+
+create cache-instance <% $cacheInstance1 %>
+% if ($rrsLastResult =~ /exists/) {
+  cache-instance <% $cacheInstance1 %>
+% }
+
+no stop-on-lost-message
+auto-start
+no shutdown
+exit
+
+create cache-instance <% $cacheInstance2 %>
+% if ($rrsLastResult =~ /exists/) {
+  cache-instance <% $cacheInstance2 %>
+% }
+
+no stop-on-lost-message
+auto-start
+no shutdown
+exit
+
+no shutdown
+exit
+
+no shutdown
+end
+
+config
+
+create client-username <% $cacheInstance1 %> message-vpn <% $vpn %> 
+% if ($rrsLastResult =~ /exists/) {
+  client-username <% $cacheInstance1 %> message-vpn <% $vpn %> 
+% }
+
+no shutdown
+exit
+
+create client-username <% $cacheInstance2 %> message-vpn <% $vpn %> 
+% if ($rrsLastResult =~ /exists/) {
+  client-username <% $cacheInstance2 %> message-vpn <% $vpn %> 
+% }
+
+no shutdown
+exit
+
+create client-username <% $solrelayInstance1 %> message-vpn <% $vpn %> 
+% if ($rrsLastResult =~ /exists/) {
+  client-username <% $solrelayInstance1 %> message-vpn <% $vpn %> 
+% }
+
+no shutdown
+exit
+
+create client-username <% $solrelayInstance2 %> message-vpn <% $vpn %> 
+% if ($rrsLastResult =~ /exists/) {
+  client-username <% $solrelayInstance2 %> message-vpn <% $vpn %> 
+% }
+
+no shutdown
+exit
+
+create client-username <% $mgmtUser %> message-vpn <% $vpn %> 
+% if ($rrsLastResult =~ /exists/) {
+  client-username <% $mgmtUser %> message-vpn <% $vpn %> 
+% }
+
+no shutdown
+exit
+
+create client-username dbUser message-vpn <% $vpn %> 
+% if ($rrsLastResult =~ /exists/) {
+  client-username dbUser message-vpn <% $vpn %> 
+% }
+
+no shutdown
+exit
+
+client-username default message-vpn <% $vpn %> 
+no shutdown
+exit
+
+end
+

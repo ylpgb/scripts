@@ -1,0 +1,456 @@
+#!/usr/bin/env run-router-script
+#
+#  This will setup a router and N solCaches with compatible configs
+#  It will:
+#     o find the latest cache (or specified version) and copy it to the router
+#     o create N config files for the N caches
+#     o add the appropriate cache configuration on the router
+#     o start the whole thing up
+#
+<%args>
+cic => 1           # Number of cache instances per cluster
+ccc => 1           # Number of cache clusters per distributed cache
+dcc => 1           # Number of distributed caches per VPN
+vc  => 1           # Number of VPNs
+cin => "i"         # Cache instance base name (name001, name002, ...)
+ccn => "c"         # Cache cluster base name (name001, name002, ...)
+dcn => "d"         # Distruted cache base name (name001, name002, ...)
+vn  => "v"         # VPN base name (name001, name002, ...)
+fcv  => ""         # Force cache version 
+cfgfile => ""      # Specify a config file to use - the instance name, vpn, host and client name will all be overrided
+plugin => ""       # Specify full path to an alternate plugin to use  
+nolocal => 0       # Don't run any cache instances on the router itself
+nab_ip => 0        # IP address of the NAB interface (by default it will figure it out from the management IP)
+kill => 0          # Kill all the cache instances instead of starting them (cleans up after an earlier run)
+debug => 0         # Show the cli interactions
+as => 1            # Start caches with auto-start
+sol => 1           # Start caches with stop-on-lost-message configured
+depth => 1         # Start caches with specified depth
+del_config => 1    # Wipe out all the old cache config before starting
+topics_per_cluster => 0 # Number of topics to add in each cluster (0 .. 1000)
+start_instances => 1 # Controls if the instances should be launched on the specified servers
+rs_flag => 0       # Flag to indicate to use solcacheRS  
+dbLoc => "/usr/sw/externalDisk" # Location of the solcacheRS database 
+</%args>
+
+% RrsSetTimeout(60);
+% my $cacheExec_g = "";
+% my $cacheDir_g = "";
+% my %instInfo_g;
+% my $numInst_g;
+% my $uname = `whoami`;
+% chomp($uname);
+% my $cacheExecForPkill_g = "solCacheInstance_.*\_$uname";
+
+
+% RrsShowOutput($debug);
+# Get the version of the router so that we can copy the appropriate solcache to it
+% my %version;
+<& %version = rs-get-router-version, normalize => 1 &>
+
+# Enable Cache feature
+% enableCacheFeature();
+
+# Remove all old cache config
+% if ($del_config) {
+% print "\nRemoving old cache config...\n";
+<& rs-rm-all-caches &>
+% }
+
+# Now configure the router to have all the instances, clusters, etc.
+# Note that this will also fill in the %instInfo_g hash
+enable
+conf t
+% print "Configuring the new cache config...\n" unless($kill);
+% configureCaches();
+
+# Copy the solCache
+% print "Copying cache executables and cache plugin...\n" unless($kill);
+% copyCacheToRouter(\%version) unless ($kill);
+
+# And the SDK
+% print "Copying cache SDK library...\n" unless($kill);
+% copySdkToRouter(\%version) unless ($kill);
+
+# Add the config files
+% makeConfigFiles() unless ($kill);
+
+# Finally start up all the cache instances
+% if ($start_instances && !$kill) {
+%   launchCaches();
+% }
+
+
+
+
+<%perl>
+  my $cfgTemplate;
+
+  sub copyCacheToRouter {
+    my ($version) = @_;
+    # Find the best version to get - assuming the latest of the current release
+    my $base = "$version->{Major}.$version->{Minor}$version->{Branch}";
+    if (defined $fcv && $fcv ne "") {
+      $base = $fcv;
+    }
+    # print "Looking: /home/public/RND/loads/solcache/$base*/Linux26-i386_opt/solCacheInstance\n";
+    my @loads = `ls -1rtd /home/public/RND/loads/solcache/$base*/Linux26-i386_opt/solcache/bin/solCacheInstance`;
+    my $load = pop(@loads);
+    if (!defined $load) {
+      Fatal("Couldn't find a load with version: $base\n");
+    }
+    chomp($load);
+    # print "\nLoad: selected $load\n";
+    my ($cacheVersion) = ($load =~ /solcache\/([^\/]+)\//);
+
+    #figure out the plugin to copy
+    if ($plugin eq "") {
+      #specific plugin was not given, so grab the default
+        $plugin = "/home/public/RND/loads/solcache/$cacheVersion/Linux26-i386_opt/solcache/lib/libSolCachePlugin.so";
+    } 
+
+    # Make a subdirectory to stick it in
+    $cacheDir_g = "solCache_$uname";
+
+    my $serverIdx = 0;
+    foreach my $server (@rrsRouterNames) {
+
+      print "Server: $server\n" unless(!$debug);
+      linuxCmd("mkdir -p $cacheDir_g", $serverIdx);
+
+      $cacheExec_g = "solCacheInstance_$cacheVersion\_$uname";
+
+      # Copy it to the router
+      print "exec:  scp $load root\@$server:$cacheDir_g/$cacheExec_g\n" unless(!$debug);
+      print "exec:  scp $plugin root\@$server:$cacheDir_g/libSolCachePlugin.so\n" unless(!$debug);
+      `addkeyto $server`;
+      `scp $load root\@$server:$cacheDir_g/$cacheExec_g`;
+      `scp $plugin root\@$server:$cacheDir_g/libSolCachePlugin.so`;
+      $serverIdx++;
+    }
+
+  }
+
+  sub copySdkToRouter {
+    my ($version) = @_;
+
+    print "Copying SDK to router\n" unless(!$debug);        
+    # Find the best version to get - assuming the latest of the current release
+    my $base = "$version->{Major}.$version->{Minor}$version->{Branch}.";
+    my @loads = `ls -1rtd /home/public/RND/loads/ccsmp/$base*/Linux26-i386_opt/solclient/lib/libsolclient.so.1`;
+    my $load = pop(@loads);
+    chomp($load);
+    # print "\nLoad: selected $load\n";
+    my ($cacheVersion) = ($load =~ /ccsmp\/([^\/]+)\//);
+
+    # Copy it to the router
+    foreach my $server (@rrsRouterNames) {
+      print "exec:  scp $load $server:$cacheDir_g/\n" unless(!$debug);
+      `scp $load root\@$server:$cacheDir_g/`;
+    }
+
+  }
+
+  sub enableCacheFeature {
+    cliCmd("enable");
+    cliCmd("admin");
+    cliCmd("product-key kmskffMbOig-jGey198JtqM-l9t7sGXqDqU-0002");
+    cliCmd("exit");
+    cliCmd("exit");
+  }
+
+  sub makeConfigFiles {
+    print "Making the config files...\n"  unless(!$debug);
+    my $file = "/tmp/tmp.cachecfg.$$";
+    for my $vpnIdx (1 .. $vc) {
+      my $vpn = sprintf("$vn%d", $vpnIdx);
+      for my $dcIdx (1 .. $dcc) {
+        my $dc = sprintf("$dcn%d", $dcIdx);
+        for my $cccIdx (1 .. $ccc) {
+          my $cc = sprintf("$ccn%d", $cccIdx);
+          for my $cicIdx (1 .. $cic) {
+            my $ci = sprintf("$cin%d", $cicIdx);
+            my $instName = sprintf("$vn%d.$dcn%d.$ccn%d.$cin%d",
+                                   $vpnIdx, $dcIdx, $cccIdx, $cicIdx);
+            my $server = $instInfo_g{$instName}{Server};
+            my $data = getCfgFile($instName, $instInfo_g{$instName}{Vpn}, 
+                                  $instInfo_g{$instName}{NabIp}, $server, $instInfo_g{$instName}{VrrpIp});
+            my $cfgFile = "cacheCfg_$instName.txt";
+            $instInfo_g{$instName}{CfgFile} = $cfgFile;
+            # print "EXEC: scp $file $server:$cacheDir_g/$cfgFile\n" unless(!$debug);
+            print "Adding file for $server:$cacheDir_g/$cfgFile\n";
+            linuxCmd("echo '$data' > $cacheDir_g/$cfgFile", $instInfo_g{$instName}{ServerNum});
+          }
+        }
+      }
+    }
+    
+  }
+
+  sub getCfgFile {
+    my ($ci, $vpn, $host, $server, $vrrpip) = @_;
+    my $template = 
+"
+CACHE_INSTANCE_NAME %%name%%
+SESSION_USERNAME cache
+SESSION_PASSWORD cache
+SESSION_HOST %%host%%
+SESSION_VPN_NAME %%vpn%%
+SESSION_CLIENT_NAME %%name%%
+SESSION_APPLICATION_DESCRIPTION %%description%%
+CACHE_SYSLOG_LOG_FACILITY local0
+CACHE_SDK_LOG_LEVEL NOTICE
+CACHE_LOG_LEVEL NOTICE
+";
+    if ($rs_flag) {
+        $template = $template.
+"
+SOLCACHE_PERSISTENT_SUPPORT  enable
+SESSION_BIND_IP %%bind_host%%
+SOLCACHE_MAX_MESSAGES_PER_TOPIC_OVERRIDE  123000
+SOLCACHE_GM_QUEUE_QUOTA_MB 160
+SOLCACHE_GM_QUEUE_MAX_MSG_SIZE_ALLOWED 10240
+SOLCACHE_PERSISTENT_MSG_STORE_FILE_PATH %%db_location%% 
+SOLCACHE_PERSISTENT_REMOVE_INVALID_DATABASE enable
+SOLCACHE_PERSISTENT_MAX_DATABASE_AGE  2419200
+SOLCACHE_MAX_DISK_USAGE 75
+SOLCACHE_DISK_USAGE_HIGH_THRESHOLD_SET 70
+SOLCACHE_DISK_USAGE_HIGH_THRESHOLD_CLEAR 60
+SOLCACHE_PERMANENT_TOPIC_PREFIX DB_CHANNEL_CONFIG
+";
+    } 
+    if (defined $cfgfile && $cfgfile ne "") {
+      open(IN, $cfgfile) || Fatal("Can't open the specifed configuration file: $cfgfile\n");
+      local $RS = "";
+      $template = <IN>;
+      $template =~ s/CACHE_INSTANCE_NAME.*/CACHE_INSTANCE_NAME $ci/;
+      $template =~ s/SESSION_HOST.*/SESSION_HOST $vrrpip/;
+      $template =~ s/SESSION_VPN_NAME.*/SESSION_VPN_NAME $vpn/;
+      $template =~ s/SESSION_CLIENT_NAME.*/SESSION_CLIENT_NAME $ci/;
+      $template =~ s/SOLCACHE_PERSISTENT_MSG_STORE_FILE_PATH.*/SOLCACHE_PERSISTENT_MSG_STORE_FILE_PATH $dbLoc/;
+      $template =~ s/SESSION_BIND_IP.*/SESSION_BIND_IP $host/;
+    }
+    else {
+    
+      $template =~ s/%%name%%/$ci/g;
+      $template =~ s/%%host%%/$vrrpip/g;
+      $template =~ s/%%vpn%%/$vpn/g;
+      $template =~ s/%%description%%/CacheInstance on $server/g;
+      $template =~ s/%%db_location%%/$dbLoc/g;
+      $template =~ s/%%bind_host%%/$host/g;
+    }
+    
+    return $template;
+  }
+
+  sub configureCaches {
+
+    foreach my $vpn (1 .. $vc) {
+      my $vpnName = sprintf("$vn%d", $vpn);
+      if (! $kill) {
+        createOrEnterCliCmd("message-vpn $vpnName");
+        cliCmd("authentication user-class client");
+        cliCmd("auth-type none");
+        cliCmd("exit");
+        cliCmd("exit");
+        cliCmd("no shut");
+        cliCmd("exit");
+        createOrEnterCliCmd("client-username default message-vpn $vpnName");
+        cliCmd("no shut");
+        cliCmd("exit");
+
+        createOrEnterCliCmd("client-username cache message-vpn $vpnName");
+        cliCmd("shut");
+        cliCmd("client-profile default");
+        cliCmd("no shut");
+        cliCmd("exit");
+        cliCmd("client-profile default message-vpn $vpnName");
+        cliCmd("no shut");
+        cliCmd("exit");
+        cliCmd("no authentication replace-duplicate-client-connections");
+      }
+      foreach my $dc (1 .. $dcc) {
+        my $dcName = sprintf("$vn%d.$dcn%d", $vpn, $dc);
+        createOrEnterCliCmd("distributed-cache $dcName message-vpn $vpnName") unless ($kill);
+        foreach my $cc (1 .. $ccc) {
+          my $clName = sprintf("$vn%d.$dcn%d.$ccn%d", $vpn, $dc, $cc);
+          createOrEnterCliCmd("cache-cluster $clName") unless ($kill);
+          cliCmd("max-messages-per-topic $depth");
+          foreach my $ci (1 .. $cic) {
+            my $ciName = sprintf("$vn%d.$dcn%d.$ccn%d.$cin%d", $vpn, $dc, $cc, $ci);
+            createOrEnterCliCmd("cache-instance $ciName") unless ($kill);
+            $instInfo_g{$ciName} = {Vpn => $vpnName,
+                                    Dc => $dcName,
+                                    Cluster => $clName};
+            $numInst_g++;
+            cliCmd("no shut") unless ($kill);
+            cliCmd($as ? "auto-start" : "no auto-start") unless ($kill);
+            cliCmd($sol ? "stop-on-lost-message" : "no stop-on-lost-message") unless ($kill);
+            cliCmd("exit") unless ($kill);
+          }        
+
+         if ($rs_flag) {
+              cliCmd("topic DB_CHANNEL_CONFIG");
+              cliCmd("max-topics 1000");
+         }
+
+          if ($topics_per_cluster > 0) {
+            for my $i (1 .. $topics_per_cluster) {
+              cliCmd("topic $clName/$i");
+              if (($i % 256) == 0) {
+                sleep(2);
+              }
+            }
+          }
+          cliCmd("no shut") unless ($kill);
+          cliCmd("exit") unless ($kill);
+        }
+        cliCmd("no shut") unless ($kill);
+        cliCmd("exit") unless ($kill);
+      }
+    }
+
+    
+
+    # The router's data IP
+    my $nabIp;
+    if ($nab_ip) {
+      $nabIp = $nab_ip;
+    }
+    else {
+      $nabIp = "192.168.". ($rrsRouterNetNum == 128 ? "160" : "164") . ".$rrsRouterNum";
+    }
+
+    # Figure out the distribution of caches to router/perf hosts
+    my @servers = @rrsRouterNames;
+    my $serverNum = 0;
+    my $firstRouter = 1;
+    if ($nolocal) {
+      shift(@servers);
+      $firstRouter = 0;
+      $serverNum = 1;
+    }
+    my $numServers = scalar(@servers);
+    if ($numServers == 0) {
+      Fatal("If you specify nolocal=1, then you must have at least one perf host specified");
+    }
+
+    my $numInstPerServer = int($numInst_g/$numServers);
+    my $numInst = $numInst_g;
+    foreach my $inst (sort(keys(%instInfo_g))) {
+      $instInfo_g{$inst}{Server} = $servers[0];
+      $instInfo_g{$inst}{ServerNum} = $serverNum;
+      $instInfo_g{$inst}{IsLocal} = $firstRouter;
+      if ($rs_flag) {
+        $instInfo_g{$inst}{NabIp} = $nabIp;
+        my $VrrpIp = "192.168.". ($rrsRouterNetNum == 128 ? "160" : "164") . ".".($rrsRouterNum+100);
+        $instInfo_g{$inst}{VrrpIp} = $VrrpIp;
+      } else {
+        $instInfo_g{$inst}{NabIp} = $firstRouter ? "127.55.55.55" : $nabIp;
+        $instInfo_g{$inst}{VrrpIp} = $instInfo_g{$inst}{NabIp};
+      }
+      
+      $numInstPerServer--;
+      $numInst--;
+      if ($numInst == 0) {
+        last;
+      }
+      if ($numInstPerServer == 0) {
+        $numServers--;
+        $serverNum++;
+        shift(@servers);
+        $numInstPerServer = int($numInst/$numServers);
+        $firstRouter = 0;
+      }
+    }
+  }
+
+
+  # Go through all the caches and start them up
+  sub launchCaches {
+    my %didPkill;
+    foreach my $inst (keys(%instInfo_g)) {
+</%perl>
+<%script type="linux" router-num="$instInfo_g{$inst}{ServerNum}">
+% if (!defined $didPkill{$instInfo_g{$inst}{ServerNum}}) { $didPkill{$instInfo_g{$inst}{ServerNum}} = 1;
+%   print "Killing instances on server $instInfo_g{$inst}{Server}...\n" unless(!$kill);
+%   while(1) {
+      pkill -KILL -f <% $cacheExecForPkill_g %>
+%     sleep(1);
+      pgrep -f <% $cacheExecForPkill_g %> | grep -v pgrep
+%     if ($rrsLastResult !~ /solCache/) {
+%       last;
+%     }
+%   }
+% }
+% if (! $kill) {
+% print "Starting cache instance $inst on server $instInfo_g{$inst}{Server}...\n";
+cd /root/<% $cacheDir_g %>
+% if ($instInfo_g{$inst}{IsLocal}) {
+export SOLACE_ON_ROUTER=1
+grep processor /proc/cpuinfo  | wc -l
+% chomp(my $numProc = $rrsLastResult);
+%   if ($numProc == 4) {
+export SOLACE_SOLCACHEINSTANCE_CPU_MASK=0x04
+%   } elsif ($numProc == 8) {
+export SOLACE_SOLCACHEINSTANCE_CPU_MASK=0x9C
+%   } else {
+%     print "Unexpected number of processors: $numProc\n";
+%   }
+LD_PRELOAD=/usr/sw/loads/currentload/lib/libbmb.so nohup ./<% $cacheExec_g %> -f <% $instInfo_g{$inst}{CfgFile} %> &
+% } else {
+nohup ./<% $cacheExec_g %> -f <% $instInfo_g{$inst}{CfgFile} %> >& /dev/null < /dev/null &
+% }
+% }
+<%perl>
+      
+    }
+</%perl>
+sleep 3
+<%perl>
+  }
+
+
+  # Push out a cli command
+  sub cliCmd {
+    my ($cmd, $serverNum) = @_;
+</%perl>
+% if (defined $serverNum) {
+<%script type="cli" router-num="$serverNum">
+% } else {
+<%script type="cli">
+% }
+<% $cmd %>
+<%perl>
+  }
+
+  # Push out a cli command
+  sub linuxCmd {
+    my ($cmd, $serverNum) = @_;
+    print "linux command: $cmd, server: $serverNum\n" unless(!$debug);
+</%perl>
+% if (defined $serverNum) {
+<%script type="linux" router-num="$serverNum">
+% } else {
+<%script type="linux">
+% }
+<% $cmd %>
+<%perl>
+  }
+
+  # Try a create first, but if it already exists, just enter that mode
+  sub createOrEnterCliCmd {
+    my ($cmd) = @_;
+</%perl>
+<%script type="cli">
+create <% $cmd %>
+% if ($rrsLastResult =~ /exists/) {
+<% $cmd %>
+% }
+% elsif ($rrsLastResult =~ /fail/) {
+%   Fatal("Failed to run the create command: create $cmd");
+% }
+<%perl>
+  }
+
+</%perl>

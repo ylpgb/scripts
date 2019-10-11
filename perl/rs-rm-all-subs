@@ -1,0 +1,23 @@
+#!/usr/bin/env run-router-script
+#
+#  This will remove all subscribers on the box
+#
+
+show subscriber *
+
+<%perl>
+
+my ($subs) = ($rrsLastResult =~ /-------\s*(\n(.|\n)*)$/);
+my @names = ($subs =~ /\n([A-Za-z0-9_]+)\s/g);
+
+</%perl>
+
+enable
+con t
+
+% foreach my $sub (@names) {
+no subscriber <% $sub %>
+% }
+
+end
+exit

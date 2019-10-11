@@ -1,0 +1,171 @@
+#!/usr/bin/env run-router-script
+#
+#  This script will capture packets on the 
+#  NAB interface and then copy them back
+#  to your current directory.
+#
+<%args>
+$pcap_file => "./3206capture.pcap"  # Local file name for pcap
+$size => ""                         # Max bytes of each packet that are captured
+$bufsize => ""                      # Maximum packet capture buffer size (total of all packets captured)
+$filter => ""                       # Specify a Wireshark-like filter expression
+$host => ""                         # Filter on a specific source or destination host IP
+$srchost => ""                      # Filter on a specific source host IP
+$dsthost => ""                      # Filter on a specific destination host IP
+$port => ""                         # Filter on a specific source or destination port
+$srcport => ""                      # Filter on a specific source port
+$dstport => ""                      # Filter on a specific destination port
+$fa => ""                           # Full action setting. Valid values are "stop" and "restart"
+$overflow => ""                     # alias for 'fa'. Valid values are "stop" and "restart"
+$bmb => 0                           # Set to 1 to filter on only backdoor (BMB) messages - same as backdoor option
+$backdoor => 0                      # Set to 1 to filter on only backdoor messages - same as bmb option
+$ng => 0                            # Use pcapng file format
+$pcapng => 0                        # Use pcapng file format
+$noclear => 0                       # Don't clear previously-captured packets
+</%args>
+
+% use Term::ReadKey;
+
+% `addkeyto $rrsRouterName`;
+
+<%script type="linux">
+/bin/ls /usr/sw/loads/currentload/scripts/oct-pci-pcap 2>/dev/null
+
+% my $pcapngExists = scalar($rrsLastResult =~ m(oct-pci-pcap)sm);
+% my $pcapQueryFilterExists = 0;
+
+<%script type="soldebug"/>
+
+% my $op = " "; my $cp = " ";
+% if ($pcapngExists) {
+#   Annoying: soldebug to the NAB (i.e. ":lconn 1") requires function
+#   parameters to be in parentheses, whereas soldebug to a host process (i.e.
+#   ":conn 3") requires function parameters to be space-separated from the 
+#   function name.
+%   $op = "("; $cp = ")";
+:lconn 1
+lkup("pcapFilterState")
+%   $pcapQueryFilterExists = scalar($rrsLastResult =~ m(pcapFilterState)sm);
+%   if ($pcapQueryFilterExists && !$filter)
+%   {
+#       Backwards compatibility for older form of specifying filter terms
+%       my @filterTerm;
+%       push(@filterTerm, "(ip.src == $srchost)")       if ($srchost ne "");
+%       push(@filterTerm, "(ip.dst == $dsthost)")       if ($dsthost ne "");
+%       push(@filterTerm, "ip.host($host)")             if ($host ne "");
+%       push(@filterTerm, "(tcp.srcport == $srcport)")  if ($srcport ne "");
+%       push(@filterTerm, "(tcp.dstport == $dstport)")  if ($dstport ne "");
+%       push(@filterTerm, "tcp.port($port)")            if ($port ne "");
+%       $filter = join(" && ", @filterTerm);
+%       $srchost = $dsthost = $host = $srcport = $dstport = $port = "";
+%   }
+% } else {
+:conn 3
+% }
+
+%   if (!$pcapQueryFilterExists && $filter)
+%   {
+%       die "$0: $rrsRouterName does not support \"filter\" option\n";
+%   }
+
+pcapStop
+% unless ($noclear) {
+pcapFilterClear
+% }
+
+% if ($pcapngExists && !$noclear) {
+pcapClear
+% }
+
+%   if ($filter ne "")
+%   {
+%       $filter = '"' . $filter if ($filter !~ m(^\"));
+%       $filter = $filter . '"' if ($filter !~ m(\"$));
+pcapFilter(<% $filter %>)
+%   }
+
+% if ($host ne "") {
+pcapFilterAddClause<% $op %>"&&", "host", "==", "<% $host %>"<% $cp %>
+% }
+
+% if ($srchost ne "") {
+pcapFilterAddClause<% $op %>"&&", "srchost", "==", "<% $srchost %>"<% $cp %>
+% }
+
+% if ($dsthost ne "") {
+pcapFilterAddClause<% $op %>"&&", "dsthost", "==", "<% $dsthost %>"<% $cp %>
+% }
+
+% if ($port ne "") {
+pcapFilterAddClause<% $op %>"&&", "port", "==", "<% $port %>"<% $cp %>
+% }
+
+% if ($srcport ne "") {
+pcapFilterAddClause<% $op %>"&&", "srcport", "==", "<% $srcport %>"<% $cp %>
+% }
+
+% if ($dstport ne "") {
+pcapFilterAddClause<% $op %>"&&", "dstport", "==", "<% $dstport %>"<% $cp %>
+% }
+
+% if ($bmb || $backdoor) {
+pcapFilterOnlyBackdoor
+% }
+
+% $fa = ($fa ne "") ? $fa : (($overflow ne "") ? $overflow : "stop");
+
+pcapBufferFullActionSet<% $op %>"<% $fa %>"<% $cp %>
+
+% if ($pcapngExists) {
+%   if ($bufsize) {
+pcapBufSize(<% $bufsize %>)
+%   }
+%   if ($size) {
+pcapStart(<% $size %>)
+%   } else {
+pcapStart
+%   }
+% } else { 
+%   $size ||= 1536; 
+pcapStart <% $size %>
+% }
+
+# Wait for the user to stop the capture
+% print "\nPress Enter to stop the capture, 'w' to stop and load wireshark or 'd' to stop and run decode-web-pcap\n";
+% my $char;
+% while (1) {
+%   ReadMode 4;
+%   $char = ReadKey(9999999999);
+%   ReadMode 0;
+%   last if ($char eq "\n" || $char eq "" || $char =~ /w/i || $char =~ /d/i);
+% }
+
+% if ($pcapngExists)
+% {
+%   $pcapng ||= $ng;
+%   (my $pcapng_file = $pcap_file) =~ s(\.pcap$)(.pcapng);
+%   print "Copying capture file from $rrsRouterName to $pcap_file\n";
+%   system("ssh root\@${rrsRouterName} \"PERL5LIB=/usr/sw/loads/currentload/lib/perl5 /usr/sw/loads/currentload/scripts/oct-pci-pcap -\" > \"$pcapng_file\"");
+%   if ($pcapng) {$pcap_file = $pcapng_file}
+%   else # convert file from pcapng to pcap format
+%   {
+%       my $cmd = "pcapng-to-pcap -r \"$pcapng_file\" -w \"$pcap_file\"";
+%       system($cmd) == 0 or die("$0: Failed \"$cmd\": $?\n");
+%   }
+% }
+% else # pcapng does not exist
+% {
+    pcapStop
+    pcapCollectAndWrite "/tmp/3206capture.pcap"
+
+    # Delay until the collection is finished
+%   RrsShowOutput(0);
+%   while(1) {
+%       if ($rrsLastResult =~ /value = 0/) {last;} else {sleep 1;}
+%   } 
+%   print "Copying capture file from $rrsRouterName to $pcap_file\n";
+%   `scp root\@${rrsRouterName}:/tmp/3206capture.pcap $pcap_file`;
+% } # else pcapng does not exist
+
+% exec "wireshark $pcap_file" if $char =~ /w/i;
+% exec "decode-web-pcap $pcap_file" if $char =~ /d/i;

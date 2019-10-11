@@ -1,0 +1,61 @@
+#!/usr/bin/env run-router-script
+#
+#  This will remove all client-profiles on the router
+#
+
+<%args>
+$pn => ""            # Prefix string for the client-profiles
+$vn => ""            # Prefix string for the message-vpn
+$cpVpnBased => 0     # Client-profile is vpn based
+</%args>
+
+% if ($cpVpnBased) {
+    show client-profile <% $pn %>* message-vpn <% $vn %>*
+% } else {
+    show client-profile <% $pn %>*
+% }
+
+<%perl>
+
+my ($profiles) = ($rrsLastResult =~ /Users\s*(\n(.|\n)*)$/);
+if (!defined $profiles) {
+  return;
+}
+
+my @names = ();
+if ($profiles) {
+  if ($pn && $vn) {
+    @names = ($profiles =~ /\n([A-Za-z0-9_]+)\s/g);
+  } else {
+    @names = ($profiles =~ /\n([A-Za-z0-9_]+\s+[A-Za-z0-9_]+)\s/g);
+  }
+}
+
+if (! @names) {
+  return;
+}
+
+</%perl>
+
+enable
+con t
+
+% foreach my $name (@names) {
+%   if ($name !~ m/^default$/) {
+%     my ($vpn) = "";
+%     if ($pn && $vn) {
+%       my ($num) = $name =~ m/^$pn(.*)$/;
+%       ($vpn) = $vn . $num;
+%     } else {
+%       ($name, $vpn) = $name =~ m/^([A-Za-z0-9_]+)\s+([A-Za-z0-9_]+)$/;
+%     }
+%     if ($cpVpnBased) {
+        no client-profile <% $name %> message-vpn <% $vpn %>
+%     } else {
+        no client-profile <% $name %>
+%     }
+%   }
+% }
+
+end
+exit

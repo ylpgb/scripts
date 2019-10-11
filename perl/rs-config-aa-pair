@@ -1,0 +1,31 @@
+#!/usr/bin/env run-router-script
+#
+#  This will configure both nodes passed in the router list as AA mates of
+#  each other.  The configuration actually performed is the same
+#
+<%args>
+router => 192.168.160.1   # IP of the router
+enable => 1               # whether or not to enable after config is done
+numConn => 4              # num of conns to configure in the cspf neighbor
+</%args>
+
+# Validate that we have a pair of routers to configure
+<%perl>
+if ($rrsNumRouters != 2) {
+    die "Must give exactly 2 routers.  $rrsNumRouters have been given";
+}
+</%perl>
+
+# Need to do a command to the second router so that $rrsRouterNames[1] will be
+# initialized
+<%script router-num="1" type = "cli">
+enable
+exit
+
+# Config the first router passed in with the second as it's mate
+<& rs-config-aa, router => $router, mate => $rrsRouterNames[1],
+                 enable => $enable, numConn => $numConn, nodeIndex => 0 &>
+
+# Config the second router passed in with the first as it's mate
+<& rs-config-aa, router => $router, mate => $rrsRouterNames[0],
+                 enable => $enable, numConn => $numConn, nodeIndex => 1 &>

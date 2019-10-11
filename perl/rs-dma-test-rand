@@ -1,0 +1,27 @@
+#!/usr/bin/env run-router-script
+#
+#  This script will capture packets on the 
+#  3206 interface and then copy them back
+#  to your home directory.
+#
+<%args>
+$lowsize    => 6    # Low end of the size of the message
+$highsize   => 255  # High end of the size of the message
+$lowburst   => 1    # Low end of the burst length
+$highburst  => 15   # High end of the burst length
+$msgs => 1          # Total number of messages
+</%args>
+
+# Increasing the timeout because sometimes the soldebug command was slow to return
+<%perl>
+   RrsSetTimeout(30); 
+</%perl>
+
+
+<%script type="soldebug"/>
+:lconn 2
+topicDmaTest4(<% $lowsize %>, <% $highsize %>, <% $lowburst %>, <% $highburst %>, <% $msgs %>)
+
+
+
+

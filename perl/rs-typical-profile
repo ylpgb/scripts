@@ -1,0 +1,28 @@
+#!/usr/bin/env run-router-script
+#
+#  This will set the publisher and subscriber profiles to
+#  typical settings
+#
+<%args>
+$cug => 1            # Which closed user-group to use
+$profile => default  # The profile name to adjust
+$cli_subs => 0       # Do you want CLI subscriptions
+</%args>
+
+enable
+con t
+
+subscriber-profile <% $profile %>
+closed-user-group <% $cug %>
+% if ($cli_subs) {
+subscription-source cli
+% }
+exit
+
+publisher-profile <% $profile %>
+closed-user-group <% $cug %>
+exit
+
+end
+exit
+

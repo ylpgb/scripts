@@ -1,0 +1,66 @@
+#!/usr/bin/env run-router-script
+#
+#  Configure different aspects of config-sync on a single router
+#
+<%args>
+cc       => 10        # Confirm connected within this many seconds, 0 to disable
+shutdown => 0         # Shutdown config-sync rather than enable it
+amr      => 1         # Issue 'assert-master' for router table
+amv      => "default" # Issue 'assert-master' for VPN table's matching pattern
+</%args>
+
+home
+enable
+configure
+
+% if ($shutdown) {
+% }
+
+no config-sync shutdown
+
+<%perl>
+if ($shutdown) {
+</%perl>
+    config-sync shutdown
+<%perl>
+}
+else {
+</%perl>
+  no config-sync shutdown
+<%perl>
+  if ($cc) {
+    my ($status, $reason);
+    for (my $i = 0; $i < $cc; $i++) {
+</%perl>
+      show config-sync
+<%perl>
+      ($status) = ($rrsLastResult =~ /.*Connection State\s*: ([\w -]+)/);
+      ($reason) = ($rrsLastResult =~ /.*Last Fail Reason\s*: ([\w -]*)/);
+      if ($status eq "Connected") {
+        last;
+      }
+      sleep(1);
+    }
+    if ($status ne "Connected") {
+      Fatal("Unable to enable config-sync: $reason");
+    }
+  }
+  if ($amr) {
+</%perl>
+    home
+    enable
+    admin
+    config-sync assert-master router
+<%perl>
+  }
+  if ($amv) {
+</%perl>
+    home
+    enable
+    admin
+    config-sync assert-master message-vpn <% $amv %>
+<%perl>
+  }
+}
+</%perl>
+

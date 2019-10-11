@@ -1,0 +1,9 @@
+#!/usr/bin/env /usr/local/devtools/bin/run-router-script
+% `scp /home/public/Hardware/operations.tgz root\@$rrsRouterIp:/usr/sw 2>&1`;
+%  RrsSetTimeout(100);
+ <%script type="linux" instance="rs_ops_tools">
+  cd /usr/sw
+  tar xfz operations.tgz
+  logger OPS: rs-ops-tools download
+  /usr/sw/operations/mklns
+  /bin/cp /usr/sw/operations/csh.csh /etc/profile.d

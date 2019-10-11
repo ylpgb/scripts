@@ -1,0 +1,37 @@
+#!/usr/bin/env run-router-script
+#
+#  This script upgrades the solrelay and solcache-RS executables running on a
+#  3260 to the latest versions on /home/public/RND/loads.
+#  It assumes that all instances of solrelay and solcache-RS are running within
+#  the normal service script framework.
+#
+<%args>
+</%args>
+
+% my $upDir = "/tmp/dbus_up_dir/";
+% my $uname = `whoami`;
+% chomp($uname);
+
+
+# need to do at least one command to get $rrsRouterName initialized
+<%script type="linux">
+
+rm -rf <% $upDir %>
+
+mkdir <% $upDir %>
+
+cd <% $upDir %>
+
+scp <% $uname %>@192.168.1.218:/home/public/RND/loads/ccsmp/current_D24/Linux26-i386_opt/solclient/lib/* .
+scp <% $uname %>@192.168.1.218:/home/public/RND/loads/solcache/current_D24rs/sol*_Linux26-i386_debug_*tar.gz .
+
+service solcache stop
+tar -xzf solcache_*tar.gz
+cp -f --reply=yes solcache/bin/* /usr/sw/solcache/bin/
+service solcache start
+
+service solrelay stop
+tar -xzf solrelay_*tar.gz
+cp -f --reply=yes solrelay/bin/* /usr/sw/solrelay/bin/
+service solrelay start
+

@@ -1,0 +1,41 @@
+#!/usr/bin/env run-router-script
+#
+#  This script will add/remove/churn bridge subscriptions.
+#
+
+<%args>
+$bn => "b"           # Bridge name
+$vn => "default"     # VPN name
+$sn => "t"           # Subscription name prefix
+$sc => 1             # Subscription count
+$scs=> 1             # Subscription count start
+$rem => 0            # Remove subscriptions
+$churn => 0          # Churn (add+remove) subscriptions this many times
+</%args>
+
+home
+enable
+configure
+bridge <% $bn %> message-vpn <% $vn %>
+
+% if ($churn) {
+%   for (1 .. $churn) {
+%     for my $i ($scs .. $scs + $sc - 1) {
+        remote subscription <% $sn . $i %>
+%     }
+%     for my $i ($scs .. $scs + $sc - 1) {
+        no remote subscription <% $sn . $i %>
+%     }
+%   }
+% }
+% else {
+%   for my $i ($scs .. $scs + $sc - 1) {
+%     if ($rem) {
+        no remote subscription <% $sn . $i %>
+%     }
+%     else {
+        remote subscription <% $sn . $i %>
+%     }
+%   }
+% }
+

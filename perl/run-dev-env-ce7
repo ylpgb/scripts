@@ -1,0 +1,131 @@
+#!/bin/bash
+
+RUN_DEV_ENV_TMP=${RUN_DEV_ENV_TMP:-"/opt/sbox/${USER}/tmp"}
+
+echo "Temp directory is ${RUN_DEV_ENV_TMP}"
+
+if [[ ! -d ${RUN_DEV_ENV_TMP} ]]; then
+    mkdir -p ${RUN_DEV_ENV_TMP}
+    if [[ $? -ne 0 ]]; then
+        echo "Failed to create temp directory ${RUN_DEV_ENV_TMP}"
+        exit 1
+    fi
+fi
+CE7_RUN_DEV_ENV_REGISTRY=${CE7_RUN_DEV_ENV_REGISTRY:-"apps-jenkins:18888"}
+CE7_RUN_DEV_ENV_REPO=${CE7_RUN_DEV_ENV_REPO:-"devserver-centos7"}
+CE7_RUN_DEV_ENV_REPO_TAG=${CE7_RUN_DEV_ENV_REPO_TAG:-"1.0.0"}
+tmpfile=$(mktemp ${RUN_DEV_ENV_TMP}/launch-script.XXXXXX)
+
+#Defaults for ENV
+npm_config_cache=${npm_config_cache:-/tmp/.npm}
+LANG=${LANG:-en_US.UTF-8}
+SOLDEV_HM=${SOLDEV_HM:-/opt/soldev}
+SVN_PATH_OVERRIDE=${SVN_PATH_OVERRIDE:-/opt/tools/centos7/svn/1.9.7/bin}
+
+SUPPORTED_AUTO_ENV_VAR=(
+                  "PATH"
+                  "npm_config_cache"
+                  "LANG"
+                  "RELEASE_BUILD"
+                  "SVN_PATH_OVERRIDE"
+                  "SOLDEV_HM"
+                  "BUILD_PKGDEST"
+                  "USER"
+                  "DISTCC_HOSTS"
+                  "VERBOSE_TOOL_WRAPPER"
+                  "TCLLIBPATH"
+                  "LD_LIBRARY_PATH"
+                  "EMAIL"
+                  )
+
+echo "#!/bin/bash" > ${tmpfile}
+if [[ -n ${CE7_ENVIRONMENT_FILE} ]]; then
+	cat ${CE7_ENVIRONMENT_FILE} >> ${tmpfile}
+elif [[ -n ${CE7_SOLDEV_ENVIRONMENT} ]]; then
+        # Default to load the development env
+        if [[ ${CE7_SOLDEV_ENVIRONMENT} -eq 1 ]]; then
+            echo source /usr/local/devtools/bin/soldev_env.sh >> ${tmpfile}
+        else
+            echo source ${CE7_SOLDEV_ENVIRONMENT} >> ${tmpfile}
+        fi
+else
+        for env_var in ${SUPPORTED_AUTO_ENV_VAR[@]}; do
+            var_name="\${"${env_var}"}"
+            var_value=$(eval "echo ${var_name}")
+            if [[ -n ${var_value} ]]; then
+                echo "export ${env_var}="'"'${var_value}'"' >> ${tmpfile}
+            fi
+        done
+fi
+ARGS=""
+whitespace="[[:space:]]"
+for ARG in "$@"
+do
+    if [[ $# -eq 1 ]]; then
+        ARGS="$@"
+        break;
+    fi
+    # For other cases use bash -c
+    if [[ $1 == "bash" ]] &&
+       [[ $2 == "-c" ]]; then
+        ARGS="$1 $2 \"${@:3}\""
+        break;
+    fi
+    # Special Cases
+    if [[ ${ARG:0:1} == "&" ]] ||
+       [[ ${ARG} =~ " && " ]] ||
+       [[ ${ARG} =~ " || " ]] ||
+       [[ ${ARG:0:2} == "2>" ]] ||
+       [[ ${ARG:0:2} == "1>" ]] ||
+       [[ ${ARG:0:1} == ">" ]] ||
+       [[ ${ARG:0:1} == "<" ]] ||
+       [[ ${ARG:0:1} == "|" ]] ||
+       [[ ${ARG:0:1} == ";" ]]
+    then
+       ARGS="$ARGS $ARG"
+    else if [[ ${ARG} =~ "=" ]] && ! [[ ${ARG%=*} =~ $whitespace ]]
+        then
+            ARGS="$ARGS ${ARG%=*}=\"${ARG#*=}\""
+        else
+            # Escape any \
+            ARG="${ARG//\\/\\\\}"
+            ARGS="$ARGS \"${ARG//\"/\\\"}\""
+        fi
+    fi
+done
+echo ${ARGS} >> ${tmpfile}
+chmod 777 ${tmpfile}
+
+origfile=/tmp/$(basename ${tmpfile})
+
+if [[ $# -ne 0 ]]; then
+	COMMANDS=" --noprofile --norc -c '${origfile}'"
+fi
+
+VOLUMES="-v /opt/cvsdirs:/opt/cvsdirs -v /opt/sbox:/opt/sbox -v /usr/local/devtools:/usr/local/devtools -v /opt/soldev:/opt/soldev -v /opt/soldev/toolchains/centos7-v7:/opt/soldev/toolchains/centos65-v7/ -v /opt/tools:/opt/tools -v /home:/home -v /etc/krb5.conf:/etc/krb5.conf -v /etc/krb5.keytab:/etc/krb5.keytab -v /etc/krb5.conf.d:/etc/krb5.conf.d -v /etc/nsswitch.conf:/etc/nsswitch.conf -v /opt/fc4-usr-local:/opt/fc4-usr-local -v /etc/sysconfig/authconfig:/etc/sysconfig/authconfig -v=/var/lib/sss/pipes/:/var/lib/sss/pipes/:rw -v /var/spool/postfix:/var/spool/postfix -v ${RUN_DEV_ENV_TMP}:/tmp -v /dev:/dev"
+
+PULL_COMMAND="docker pull  ${CE7_RUN_DEV_ENV_REGISTRY}/${CE7_RUN_DEV_ENV_REPO}:${CE7_RUN_DEV_ENV_REPO_TAG}"
+if ! eval ${PULL_COMMAND}; then
+    docker login -u solace -p solace1 ${CE7_RUN_DEV_ENV_REGISTRY} 2>/dev/null
+    if ! eval ${PULL_COMMAND}; then
+        echo "Failed to pull ${CE7_RUN_DEV_ENV_REGISTRY}/${CE7_RUN_DEV_ENV_REPO}:${CE7_RUN_DEV_ENV_REPO_TAG}"
+        exit -1
+    fi
+fi 
+
+INTERACTIVE_OPT=
+if [[ -t 1 ]]; then
+    INTERACTIVE_OPT="-it" 
+    COMMAND="/bin/bash --login ${COMMANDS}"
+else
+    COMMAND="/bin/bash ${COMMANDS}"
+fi
+
+docker run ${INTERACTIVE_OPT} --rm --privileged=true --net=host -u $(id -u):$(id -g) ${VOLUMES} \
+        --env USER=${USER} --env HOME=${HOME} --env DISPLAY="${DISPLAY}" --workdir=${PWD} \
+        ${CE7_EXTRA_DOCKER_OPTIONS} \
+        ${CE7_RUN_DEV_ENV_REGISTRY}/${CE7_RUN_DEV_ENV_REPO}:${CE7_RUN_DEV_ENV_REPO_TAG} ${COMMAND}; ret=$?
+
+rm "${tmpfile}"
+
+exit ${ret}

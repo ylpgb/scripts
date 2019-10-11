@@ -1,0 +1,19 @@
+#!/usr/bin/env run-router-script
+#  Reset AD
+#
+<%args>
+$prefix => scale # prefix string for the trusted-root
+$count => 64     # number of trusted roots (index starts at 1 till this num)
+</%args>
+
+enable
+configure
+authentication
+
+% for my $i (1 .. $count) { 
+%  my $filename = "${prefix}${i}.crt";
+   no trusted-root file <% $filename %>
+% }
+
+end
+exit

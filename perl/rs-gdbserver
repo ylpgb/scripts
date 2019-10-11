@@ -1,0 +1,13 @@
+#!/usr/bin/env run-router-script
+#
+#  This will run gdbserver for the given executable (i.e. xmlmanager)
+#
+<%args>
+$exe           # executable string to debug
+</%args>
+
+<%script type="linux"/>
+ps -ef | grep <% $exe %>
+% my @column = split(/ +/, $rrsLastResult);
+% my $procId = $column[1];
+gdbserver --attach :5678 <% $procId %> &

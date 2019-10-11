@@ -1,0 +1,109 @@
+#!/usr/bin/env run-router-script
+#
+#  Configure MQTT for the router
+#
+<%args>
+vn         => "scale" # VPN name
+</%args>
+
+show message-vpn <% $vn %> mqtt mqtt-session *
+
+<%perl>
+
+my ($output) = ($rrsLastResult =~ /------\s*(\n(.|\n)*)$/);
+
+my @lines = ($output =~ /\n.+/g);
+
+print "------------------------------------------------------------------------\n";
+
+</%perl>
+
+
+<%script type = "cli">
+home
+enable
+configure
+message-vpn <% $vn %>
+mqtt
+
+% foreach my $line (@lines) {
+
+%    if ($line !~ m/^\n(#|\s)/) {
+#%      print "$line\n";
+%      my ($mqttSession) = $line =~ m/\n([A-Za-z0-9_-]+)\s+\s/;
+#%      print "$mqttSession\n";
+
+       mqtt-session <% $mqttSession %>
+       shutdown
+       exit
+       no mqtt-session <% $mqttSession %>
+
+%    }
+
+%}
+
+
+show client-username * message-vpn <% $vn %>
+
+<%perl>
+
+($output) = ($rrsLastResult =~ /------\s*(\n(.|\n)*)$/);
+
+@lines = ($output =~ /\n.+/g);
+
+print "------------------------------------------------------------------------\n";
+
+</%perl>
+
+
+<%script type = "cli">
+home
+enable
+configure
+
+% foreach my $line (@lines) {
+
+%    if ($line !~ m/^\n(#|\s)/) {
+#%      print "$line\n";
+%      my ($username) = $line =~ m/\n([A-Za-z0-9_-]+)\s+\s/;
+#%      print "$username\n";
+
+%       if (!($username eq "default")) {
+         no client-username <% $username %> message-vpn <% $vn %>
+%      }
+%    }
+%}
+
+home
+enable
+show client-profile * message-vpn <% $vn %>
+
+<%perl>
+($output) = ($rrsLastResult =~ /-----\s*(\n(.|\n)*)$/);
+@lines = ($output =~ /\n.+/g);
+
+print "------------------------------------------------------------------------\n";
+
+</%perl>
+
+
+<%script type = "cli">
+home
+enable
+configure
+
+% foreach my $line (@lines) {
+
+%    if ($line !~ m/^\n(#|\s)/) {
+#%      print "$line\n";
+%      my ($profile) = $line =~ m/\n([A-Za-z0-9_-]+)\s+\s/;
+#%      print "$profile\n";
+
+%       if (!($profile eq "default")) {
+         no client-profile <% $profile %> message-vpn <% $vn %>
+%      }
+%    }
+%}
+
+
+

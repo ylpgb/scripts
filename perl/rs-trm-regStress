@@ -1,0 +1,47 @@
+#!/usr/bin/env run-router-script
+<%args>
+  $subupdates => 10000000  # Number of updates that will be done by regStress
+  $delay      => 20000     # Delay value.
+  $skipinit   => 0         # Set to 1 to skip FPGA init	
+</%args>
+
+<%perl>
+
+my $slot = getTrmSlot();
+
+RrsSetTimeout(1800); 
+
+</%perl>
+
+
+
+%# Run regStress
+<%script type="linux">
+
+cd /root/
+./regStress <% $slot %> <% $subupdates %> <% $delay %> <% $skipinit %>
+
+<%perl>
+
+  sub getTrmSlot {
+
+    RrsShowOutput(0);
+</%perl>
+<%script type="linux">
+cat /proc/solace/3200
+<%perl>
+    RrsShowOutput(1);
+
+    my ($slot) = ($rrsLastResult =~ /(\d+)  3210/);
+    
+    print "Found slot: $slot\n";
+    if (!defined $slot) {
+      print "ERROR:  Couldn't find TRM slot number\n";
+      exit;
+    }
+
+    return $slot;
+
+  }
+
+</%perl>

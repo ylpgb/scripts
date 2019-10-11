@@ -1,0 +1,25 @@
+#!/usr/bin/env run-router-script
+#
+#  Reset AD
+#
+<%args>
+backup => 0 # Set to 1 if this is the backup router
+</%args>
+
+% RrsSetTimeout(60);
+
+enable
+config
+hardware message-spool
+shutdown
+
+end
+admin
+system message-spool
+reset
+
+end
+
+config
+hardware message-spool
+no shutdown <% $backup ? "backup" : "primary" %>

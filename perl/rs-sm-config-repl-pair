@@ -1,0 +1,78 @@
+#!/usr/bin/env run-router-script
+#
+
+<%args>
+</%args>
+
+<%perl>
+if ($rrsNumRouters != 2) {
+    die "Must give exactly 2 routers.  $rrsNumRouters have been given";
+}
+my $host = `hostname`;
+chomp($host);
+</%perl>
+
+<%script router-num="1" type = "cli">
+enable
+configure
+
+show router-name
+% my ($rn1) = ($rrsLastResult =~ /Router Name: +(.*)/);
+show ip vrf msg-backbone
+% my ($ip1) = ($rrsLastResult =~ /.*static +([\d.]+)/);
+show service
+% my ($port1) = ($rrsLastResult =~ /SMF .*MsgBB +(\d+)/);
+
+<%script router-num="0" type = "cli">
+enable
+configure
+
+show router-name
+% my ($rn0) = ($rrsLastResult =~ /Router Name: +(.*)/);
+show ip vrf msg-backbone
+% my ($ip0) = ($rrsLastResult =~ /.*static +([\d.]+)/);
+show service
+% my ($port0) = ($rrsLastResult =~ /SMF .*MsgBB +(\d+)/);
+
+hardware message-spool internal-disk
+no hardware message-spool shutdown primary
+no config-sync shutdown
+replication mate virtual-router-name v:<% $rn1 %> connect-via <% $ip1 %>
+replication mate connect-port <% $port1 %>
+replication interface 1/1/lag1
+message-vpn default
+replication
+bridge client-username default
+state active
+no shutdown
+
+!! Allow bridging
+home
+enable
+configure
+client-profile default message-vpn default
+allow-bridge-connections
+
+!! Allow AD stuff
+home
+enable
+configure
+client-profile default message-vpn default
+message-spool allow-guaranteed-endpoint-create
+message-spool allow-guaranteed-message-send
+message-spool allow-guaranteed-message-receive
+message-spool allow-transacted-sessions
+
+<%script router-num="1" type = "cli">
+hardware message-spool internal-disk
+no hardware message-spool shutdown primary
+no config-sync shutdown
+replication mate virtual-router-name v:<% $rn0 %> connect-via <% $ip0 %>
+replication mate connect-port <% $port0 %>
+replication interface 1/1/lag1
+message-vpn default
+replication
+bridge client-username default
+state standby
+no shutdown
+

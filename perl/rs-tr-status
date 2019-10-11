@@ -1,0 +1,14 @@
+#!/usr/bin/env run-router-script
+#
+#  This script will periodically read various stats and 
+#  display them on the screen
+#
+#
+<%args>
+$interval => 1   # Polling interval in seconds
+$mode     => "c" # Mode to start in (defaults to 'c')
+$show_all => 0   # Show all the items, one after another
+</%args>
+
+<& rs-generic-status, router_type => 'soltr', interval => $interval, mode => $mode, show_all => $show_all &>
+

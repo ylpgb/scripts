@@ -1,0 +1,63 @@
+#!/usr/bin/env run-router-script
+#
+#  This script will periodically read the dataplane stats and dump
+#  them to the screen.
+#
+#  Hot-keys during execution:
+#
+#    d:  toggle between discard stats and normal stats
+#    c:  clear the datapath stats
+#    q:  quit
+#
+<%args>
+$interval => 1 # Polling interval in seconds
+$show_discards => 0
+</%args>
+
+<%perl>
+
+print "\n\nHot-keys during execution:
+
+    d:  toggle between discard stats and normal stats
+    c:  clear the datapath stats
+    q:  quit\n\n";
+
+sleep 1;
+
+RrsShowOutput(0);
+use Term::ReadKey;
+
+</%perl>
+
+
+enable
+
+% while (1) {
+
+%   if ($show_discards) {
+show da st discard
+%   } else {
+show da st
+%   }
+
+%   Msg($rrsLastResult); 
+%   ReadMode 4;
+%   my $char = ReadKey($interval);  
+%   ReadMode 0;
+%   if (defined $char) {
+%      if ($char eq "c") {
+
+clear da st
+
+%      }
+%      elsif ($char eq "d") {
+%        $show_discards ^= 1;
+%      }
+%      elsif (($char eq "q") || ($char eq "")) {
+%        ReadMode 0; last;
+%      }
+%   }
+
+% }
+
+exit

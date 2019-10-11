@@ -1,0 +1,8 @@
+#!/bin/bash
+
+docker login -u solace -p solace1 apps-jenkins:18888
+docker pull apps-jenkins:18888/devserver-centos65:latest
+
+source ${HOME}/run-dev-env-config
+
+docker run -it --rm --privileged=true --net=host -h $HOST -v $PROJECT_PATH:/opt/cvsdirs --env USER=$CURRENT_USER --env HOME=$HOME --env WORKINGDIR=$WORKING_DIR apps-jenkins:18888/devserver-centos65:latest /usr/bin/entry.sh $@

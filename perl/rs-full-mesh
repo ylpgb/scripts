@@ -1,0 +1,40 @@
+#!/usr/bin/env run-router-script
+#
+# Creates a full mesh of all specified routers
+
+<%args>
+numConn => 4            # num of conns to configure in the cspf neighbor
+</%args>
+
+% # make an array of all the LAG1 IPs for the routers
+% my @lagIp;
+
+% for my $i (0 .. ($rrsNumRouters-1)) {
+
+<%script router-num="$i" type="cli">
+enable
+conf t
+
+%   $lagIp[$i] = "192.168.". (($rrsRouterNetNums[$i] == 128) ? "160" : "164") .".". $rrsRouterNums[$i];
+
+% }
+
+
+% # Do the full mesh now
+% for my $i (0 .. ($rrsNumRouters-1)) {
+%   for my $j ($i+1 .. ($rrsNumRouters-1)) {
+
+<%script router-num="$i" type="cli">
+create router cspf neighbor <% $lagIp[$j] %> num-con <% $numConn %>
+exit
+exit
+exit
+
+<%script router-num="$j" type="cli">
+create router cspf neighbor <% $lagIp[$i] %> num-con <% $numConn %>
+exit
+exit
+exit
+
+%   }
+% }

@@ -1,0 +1,16 @@
+#!/usr/bin/env run-router-script
+#
+#  This will set up the lag 1 interface to the recommended value and
+#  add the default route.
+#
+<%args>
+</%args>
+
+enable
+con t
+
+router csmp csmp-vrid 192.168.<% $rrsRouterNetNum == 128 ? "160" : "164" %>.1<% $rrsRouterNum %> vrrp-vrid <% $rrsRouterNetNum == 128 ? "1" : "" %><% $rrsRouterNum %>
+
+end
+exit
+

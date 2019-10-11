@@ -1,0 +1,53 @@
+#!/usr/bin/env run-router-script
+#
+#  This will log onto the specified router, run the profiler and see if
+#  an Octeon data core is in a dead state.
+#
+<%args>
+</%args>
+
+<%perl>
+print "Copying safe profiler to router\n";
+`addkeyto $rrsRouterName`;
+`scp /home/efunnekotter/3206DebugTools/oct-pci-profile root\@${rrsRouterName}:`;
+</%perl>
+
+
+<%script type="linux">
+
+% RrsShowOutput(0);
+% print "\nRunning profiler...\n\n";
+perl -e 'open(IN, "/root/oct-pci-profile | "); while ($line=<IN>) {print $line; if ($line =~ /L2/) { exit;}};'
+
+<%perl>
+
+  my %data;
+  foreach my $line (split(/\n/, $rrsLastResult)) {
+    if ($line =~ s/(0x[0-9a-fA-F]+)://) {
+      my $addr = $1;
+      my @counts = ($line =~ /(\d+)/g);
+      my $core = 0;
+      foreach my $val (@counts) {
+        if ($val) {
+          $data{$addr}{$core} = $val;
+        }
+        $core++;
+      }
+    }
+  }
+
+  if ($data{"0x0000000000000000"}) {
+    foreach my $core (keys(%{$data{"0x0000000000000000"}})) {
+      if ($data{"0x0000000000000000"}{$core} > 1) {
+        print "Suspected dead core $core on router $rrsRouterName\n";
+        print "\n\nProfile data:\n$rrsLastResult\n\n";
+        print "Suspected dead core $core on router $rrsRouterName\n";
+      }
+    }
+  }
+  else {
+    print "Router $rrsRouterName appears to be OK\n\n";
+  }
+
+
+</%perl>

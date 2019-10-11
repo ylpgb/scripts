@@ -1,0 +1,30 @@
+#!/usr/bin/env run-router-script
+#
+#  This will do a typical router setup including a publisher and subscriber
+#  with the default sdkperf usernames.
+#
+<%args>
+$pn => "perf_pub"  # Publisher prefix name
+$pc => 1              # Number of publishers
+$sn => "perf_sub"  # Subscriber prefix name
+$sc => 1              # Number of subscribers
+$cn => "perf_client"  # Client prefix name
+$cc => 1              # Number of clients
+
+</%args>
+
+%# Default setup
+<& rs-config-if &>
+<& rs-no-authentication &>
+<& rs-typical-profile, cug => 1, profile => "default", cli_subs => 0 &>
+<& rs-add-subs, sn => $sn, sc => $sc, profile => "default" &>
+<& rs-add-subs, sn => $pn, sc => $pc, profile => "default" &>
+<& rs-add-pubs, pn => $pn, pc => $pc, profile => "default" &>
+<& rs-add-pubs, pn => $sn, pc => $sc, profile => "default" &>
+
+# Clients
+<& rs-add-subs, sn => $cn, sc => $cc, profile => "default" &>
+<& rs-add-pubs, pn => $cn, pc => $cc, profile => "default" &>
+
+
+

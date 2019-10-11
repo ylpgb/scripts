@@ -1,0 +1,27 @@
+#!/usr/bin/env run-router-script
+#
+#  This will create a VPN and configure it as per the DBus solution on both 
+#  nodes passed in the router list.
+#  
+#
+<%args>
+router => 192.168.160.1   # IP of the router(s)
+vpn                       # VPN to create
+</%args>
+
+# Need to do a command to the second router so that $rrsRouterNames[1] will be
+# initialized
+% if ($rrsNumRouters == 2) {
+<%script router-num="1" type = "cli">
+enable
+exit
+% }
+
+# setup both routers
+<& rs-dbus-vpn-config, router => $router, vpn => $vpn, nodeIndex => 0 &>
+
+% if ($rrsNumRouters == 2) {
+<& rs-dbus-vpn-config, router => $router, vpn => $vpn, nodeIndex => 1 &>
+% }
+
+

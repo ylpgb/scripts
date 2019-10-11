@@ -1,0 +1,176 @@
+#!/usr/bin/env run-router-script
+# This script will configure the TRB loopback to deliver all messages to the specified clients
+<%args>
+  $clients   => '*'  # Comma separated list of clients or '*' for all
+</%args>
+
+<%perl>
+
+my $slot = getTrmSlot();
+
+</%perl>
+
+
+%# Start the TopicEgressDispatcher
+<%script type="soldebug">
+:lconn 1
+topicEgressDispatcher_start
+
+
+%# Setup the TMR
+<%script type="linux">
+
+cd /usr/solace/loads/currentload/firmware
+
+%# Loopback mode
+%# EMR_CTRL	
+./solapp -s <% $slot %> -w 1 0x6000 5
+%# MPE_CTRL	
+./solapp -s <% $slot %> -w 1 0x3000 3
+
+% my @clients = split(/,/, $clients);
+% my @destIds = findDests(\@clients);
+
+% while (1) {
+%   if (@destIds) {
+
+<%script type="linux">
+%# Write some result data
+./solapp -s <% $slot %> -w 1 0x6030 <% sprintf("%x",scalar(@destIds)) %>
+./solapp -s <% $slot %> -w 1 0x602c 0
+
+./solapp -s <% $slot %> -w 1 0x6030 <% sprintf("%x",$destIds[0]) %>
+./solapp -s <% $slot %> -w 1 0x602c 1
+
+%     shift(@destIds);
+
+%     my $addr = 2;
+%     while (@destIds) {
+%       my $value = sprintf("%04x%04x", $destIds[0] || 0, $destIds[1] || 0);
+./solapp -s <% $slot %> -w 1 0x6030 <% $value %>
+./solapp -s <% $slot %> -w 1 0x602c <% sprintf("%x",$addr) %>
+%       $addr++;
+%       shift(@destIds);
+%       shift(@destIds);
+%     }
+
+%# EMR_API_LPBK_DESTSET_LENGTH
+./solapp -s <% $slot %> -w 1 0x6034 <% sprintf("%x", int(($addr+1)/2)-1) %>
+
+%   }
+%   if (@clients == 0) {
+%     last;
+%   }
+
+%   sleep(2);
+%   @destIds = findDests(\@clients);
+
+% }
+
+
+
+
+<%perl>
+ 
+  sub getTrmSlot {
+
+    RrsShowOutput(0);
+</%perl>
+<%script type="linux">
+cat /proc/solace/3200
+<%perl>
+    RrsShowOutput(1);
+
+    my ($slot) = ($rrsLastResult =~ /(\d+)  3210/);
+    
+    print "Found slot: $slot\n";
+    if (!defined $slot) {
+      print "ERROR:  Couldn't find TRM slot number\n";
+      exit;
+    }
+
+    return $slot;
+
+  }
+
+  sub findDests {
+    my ($clients) = @_;
+    my @notFound = ();
+    my @destIds = ();
+
+</%perl>
+<%script type="cli">
+show client *
+<%perl>
+    my %clients;
+    my %clientDescs;
+    my $useDesc;
+    foreach my $line (split(/\n/, $rrsLastResult)) {
+      my ($addr, $name, $desc) = ($line =~ /^\s+\d+\s+(\d+\.\d+\.\d+\.\d+\:\d+)\s+([a-zA-Z0-9_]+)\s+([a-zA-Z0-9_]*)/);
+      if (defined $addr) {
+        if (defined $clients{$name}) {
+          $useDesc = 1;
+        }
+        $clients{$name} = $addr;
+        if (defined $desc) {
+          $clientDescs{$desc} = $addr;
+        }
+        print "Adding: $name with addr $addr\n";
+      }
+    }
+
+    if ($clients->[0] eq '*') {
+      if ($useDesc) {
+        @{$clients} = keys(%clientDescs);
+      }
+      else {
+        @{$clients} = keys(%clients);
+      }
+    }
+
+    foreach my $client (@{$clients}) {
+      if (defined $clients{$client} && !$useDesc) {
+</%perl>
+<%script type="cli">
+show client <% $clients{$client} %>
+<%perl>
+      
+        my ($destId) = ($rrsLastResult =~ /Client Id:\s+(\d+)/);
+    
+        if (defined $destId) {
+          push(@destIds, $destId);
+        }
+        else {
+          push(@notFound, $client);
+        }
+
+      }
+      elsif (defined $clientDescs{$client}) {
+</%perl>
+<%script type="cli">
+show client <% $clientDescs{$client} %>
+<%perl>
+      
+        my ($destId) = ($rrsLastResult =~ /Client Id:\s+(\d+)/);
+    
+        if (defined $destId) {
+          push(@destIds, $destId);
+        }
+        else {
+          push(@notFound, $client);
+        }
+
+      }
+      else {
+        push(@notFound, $client);
+      }
+
+    }
+
+    @{$clients} = @notFound;
+    return @destIds;
+
+  }
+
+
+</%perl>

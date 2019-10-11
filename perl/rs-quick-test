@@ -1,0 +1,55 @@
+#!/usr/bin/env run-router-script
+#
+#  This will do a typical router setup for most debuging and run rtrperf
+#  with some traffic to that box when it is finished.  The rtrperf instance
+#  will be run on the router itself.
+#
+<%args>
+$pn => "p"  # Publisher prefix name
+$pc         # Number of publishers
+$sn => "s"  # Subscriber prefix name
+$sc         # Number of subscribers
+$mn => 1000 # Number of messages 
+$mr => 1000 # Message rate per publisher
+</%args>
+
+% my $rtrperfRouterNum = ($rrsNumRouters > 1) ? 1 : 0;
+% my $ip = "192.168.". ($rrsRouterNetNum == 128 ? "160" : "164").".". ($rrsRouterNum);
+
+
+%# Default setup
+<& rs-config-if &>
+<& rs-no-authentication &>
+<& rs-typical-profile, cug => 1, profile => "default", cli_subs => 0 &>
+<& rs-add-subs, sn => $sn, sc => $sc, profile => "default", sxl => '/*' &>
+<& rs-add-pubs, pn => $pn, pc => $pc, profile => "default" &>
+
+%# Get the release of SolOS (so we know which version of rtrperf to use)
+show version
+% my ($release) = ($rrsLastResult =~ /CLI\s+([0-9a-zA-Z]+\.[0-9a-zA-Z]+)\./);
+
+%# Put the latest rtrperf
+<%script router-num="$rtrperfRouterNum" type="cli">
+<& rs-install-rtrperf, release => $release, install_dir => "/root/rtrperf.install", rtrperf_name => "rtrperf" &>
+
+%# Don't run with VRIDs
+<%script router-num="0" type="cli">
+enable
+con t
+router csmp
+no csmp-vrid
+
+
+%# Now run rtrperf
+
+<%script router-num="$rtrperfRouterNum" type="linux">
+
+cd /root/rtrperf.install
+
+% RrsSetTimeout(9999999999);  # Long long time
+% my $cmd = "./rtrperf -pip=$ip:55555 -pn=$pn -sn=$sn -pc=$pc -sc=$sc -nad -mn=$mn -mr=$mr -sxl=";
+% Msg("Running: $cmd");
+
+<% $cmd %>
+%# ./rtrperf -pip=<% $ip %>:55555 -pn=<% $pn %> -sn=<% $sn %> -pc=<% $pc %> -sc=<% $sc %> -nad -mn=<% $mn %> -mr=<% $mr %> 
+

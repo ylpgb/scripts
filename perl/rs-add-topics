@@ -1,0 +1,29 @@
+#!/usr/bin/env run-router-script
+#
+#  This script will add the specified number of durable-topic-endpoints with the specified prefix
+#  to the router.
+#
+<%args>
+$tn                  # Prefix string for the durable-topic-endpoints 
+$tc                  # Number of durable-topic-endpoints to add
+$msgVpn => default   # messageVpn
+$tb => 0             # create backup durable-topic-endpoints
+$zf => 1             # want zero fill names.
+</%args>
+
+enable
+con t
+
+message-spool message-vpn <% $msgVpn %>
+% for my $i (1 .. $tc) {
+
+create topic-endpoint <% $tn . (($zf) ? sprintf("%05d", $i) : sprintf("%d", $i)) %> <% ($tb) ? "backup" : "" %>
+permission all delete
+no shut
+
+exit
+
+% }
+
+end
+exit

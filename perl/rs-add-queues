@@ -1,0 +1,53 @@
+#!/usr/bin/env run-router-script
+#
+#  This script will add the specified number of queues with the specified prefix
+#  to the router.
+#
+<%args>
+$qn                  # Prefix string for the queues
+$qc                  # Number of queues to add
+$owner => ""         # should the queue be set to an owner?
+$msgVpn => default   # messageVpn
+$qb => 0             # create backup queues
+$topic => ""         # add a topic with this name to the queue
+$nt => 0             # number the added topic with queue number
+$zf => 1             # want zero fill names.
+$ttl => 0            # want respect ttl
+</%args>
+
+enable
+con t
+message-spool message-vpn <% $msgVpn %>
+
+% for my $i (1 .. $qc) {
+
+create queue <% $qn . (($zf) ? sprintf("%05d", $i) : sprintf("%d", $i)) %> <% ($qb) ? "backup" : "" %>
+% if ($rrsLastResult =~ /already exists/) {
+    queue <% $qn . (($zf) ? sprintf("%05d", $i) : sprintf("%d", $i)) %> <% ($qb) ? "backup" : "" %>
+% }
+
+permission all delete
+
+% if (defined $topic && $topic ne "") {
+%   my $t = $topic;
+%   if ($nt) {
+%     $t .= (($zf) ? sprintf("%05d", $i) : sprintf("%d", $i));
+%   }
+    subscription topic <% $t %>
+% }
+
+% if ($ttl) {
+    respect-ttl
+% }
+
+% if (defined $owner && $owner ne "") {
+    owner <% $owner %>
+% }
+
+no shut
+exit
+
+% }
+
+end
+exit

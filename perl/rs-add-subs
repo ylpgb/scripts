@@ -1,0 +1,36 @@
+#!/usr/bin/env run-router-script
+#
+#  This script will add the specified number of subs with the specified prefix
+#  to the router.
+#
+<%args>
+$sn                  # Prefix string for the subscribers
+$sc                  # Number of subscribers to add
+$profile => default  # Which profile to give them
+$sxl => ""           # Comma separated list of XPEs
+$sb => 0             # create backup subscribers
+</%args>
+
+enable
+con t
+
+% for my $i (1 .. $sc) {
+
+subscriber <% $sn . sprintf("%04d", $i) %> <% ($sb) ? "backup" : "" %>
+profile <% $profile %>
+
+% if ($sxl) {
+%   my @xpes = split(/\s*,\s*/, $sxl);
+%   foreach my $xpe (@xpes) {
+
+subscription xpe <% $xpe %>
+
+%   }
+% }
+
+exit
+
+% }
+
+end
+exit

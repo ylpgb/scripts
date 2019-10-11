@@ -1,0 +1,77 @@
+#!/usr/bin/env run-router-script
+#
+#  This will do a typical jndi router setup including connection factor, topics, and queues.
+#
+<%args>
+$cf => "/jms/cf/default" # JMS Connection factory.
+$cc => 1                 # Connection factory count.
+$tn => "topic"           # DTE name prefix
+$tc => 1                 # Number of DTEs 
+$qn => "queue"           # Subscriber prefix name
+$qc => 1                 # Number of queues  
+$xa => 0                 # XA allowed
+$dt => 1                 # Direct transport - set to 0 for guaranteed
+</%args>
+
+enable
+
+% for my $i (1 .. $cc) {
+con t
+jndi message-vpn default
+%  if ($i == 1) {
+create connection-factory <% $cf %>
+%  } else {
+create connection-factory <% $cf . $i %>
+%  }
+
+% if ($rrsLastResult =~ /already exists/) {
+%  if ($i == 1) {
+connection-factory <% $cf %>
+%  } else {
+connection-factory <% $cf . $i %>
+%  }
+% }
+
+property-list transport-properties
+property direct-transport <% $dt ? 'true' : 'false' %>
+exit
+
+property-list messaging-properties
+property xa <% $xa ? 'true' : 'false' %>
+exit
+
+end
+%}
+
+% for my $i (1 .. $tc) {
+con t
+message-spool message-vpn default
+create topic-endpoint <% $tn . $i %>
+end
+con t
+jndi message-vpn default
+create topic <% $tn . $i %>
+property  physical-name <% $tn . $i %>
+end
+%}
+
+% for my $i (1 .. $qc) {
+con t
+message-spool message-vpn default
+create queue <% $qn . $i %>
+end
+con t
+jndi message-vpn default
+create queue <% $qn . $i %>
+property  physical-name <% $qn . $i %>
+end
+%}
+
+con t
+jndi message-vpn default
+no shutdown
+end
+
+
+
+

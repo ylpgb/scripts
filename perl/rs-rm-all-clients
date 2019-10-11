@@ -1,0 +1,24 @@
+#!/usr/bin/env run-router-script
+#
+#  This will remove all publishers on the box
+#
+
+enable 
+
+show client *
+
+<%perl>
+
+my ($clients) = ($rrsLastResult =~ /-------\s*(\n(.|\n)*)$/);
+my @names = ($clients =~ /\n([A-Za-z0-9_]+)\s/g);
+
+</%perl>
+
+con t
+
+% foreach my $pub (@names) {
+no client <% $pub %>
+% }
+
+end
+exit

@@ -1,0 +1,36 @@
+#!/usr/bin/env run-router-script
+#
+#  This script will add the specified number of subs with the specified prefix
+#  to the router.
+#
+<%args>
+$sn => ""            # Prefix string for the subscribers
+$sc                  # Number of subscribers to add
+$cc                  # Number of consumer IDs to add
+$sen => ""           # Exact name of the subscriber
+$xpe => "/*"         # Subscription to associate with consumer IDs 
+$rm => ""            # Flag to remove consumers IDs 
+</%args>
+
+% my $noFlag = "";
+% if ($rm ne "") {$noFlag = "no"}
+% if ($sen ne "") {$sc = 1}
+enable
+con t
+
+% for my $i (1 .. $sc) {
+
+%   if ($sen ne "") {
+        subscriber <% $sen  %>
+%   } else {
+        subscriber <% $sn . sprintf("%04d", $i) %>
+%   }
+%   for my $i (1 .. $cc) {
+        <% $noFlag %> subscription consumer-id <% $i %> xpe <% $xpe %>
+%   }
+
+    exit
+% }
+
+end
+exit

@@ -1,0 +1,100 @@
+#!/usr/bin/env run-router-script
+#
+#  This script will add scaled configurations to the router.
+#
+
+<%args>
+$msgVpn                     # message-vpn name, if applicable
+$cachePrefix                # prefix of name for distributed-cache
+$cacheStartNum              # start number for name suffix of distributed-cache
+$cacheEndNum                # end number for name suffix of distributed-cache
+$clusterPrefix              # prefix of name for cache-cluster
+$clusterStartNum            # start number for name suffix of cache-cluster
+$numClusters                # number of cache-clusters to create in total
+$numClustersPerCache        # number of cache-clusters to create for each distributed-cache
+$instancePrefix             # prefix of name for cache-instance
+$instanceStartNum           # start number for name suffix of cache-instance
+$numInstances               # number of cache-instances to create in total
+$numInstancesPerCluster     # number of cache-instances to create for each cache-cluster
+$homeClusterPrefix          # prefix of name for home-cache-cluster
+$homeClustersPerCluster     # number of home-cache-clusters to create for each cache-cluster
+$cacheTopicPrefix           # prefix of name for cache topic
+$cacheTopicsPerCluster      # number of cache topics to create for each cache-cluster
+$detailedRemove => "0"      # remove contained objects (otherwise, remove only containing objects)
+$remove => "0"              # remove object (otherwise, add object)
+</%args>
+
+enable
+config
+
+% if (!$remove) {
+
+% for my $i ($cacheStartNum .. $cacheEndNum) {
+create distributed-cache <% $cachePrefix . $i %> message-vpn <% $msgVpn %>
+%   if ($numClusters > 0) {
+%       my $numClustersForCache = ($numClusters, $numClustersPerCache)[$numClusters > $numClustersPerCache];
+%       $numClusters = $numClusters - $numClustersForCache;
+%       for my $j (1 .. $numClustersForCache) {
+create cache-cluster <% $cachePrefix . $clusterPrefix . $clusterStartNum %>
+%           if ($numInstances > 0) {
+%               my $numInstancesForCluster = ($numInstances, $numInstancesPerCluster)[$numInstances > $numInstancesPerCluster];
+%               $numInstances = $numInstances - $numInstancesForCluster;
+%               for my $k (1 .. $numInstancesForCluster) {
+create cache-instance <% $cachePrefix . $instancePrefix . $instanceStartNum %>
+exit
+%                   $instanceStartNum = $instanceStartNum + 1;
+%               }
+%           }
+%           for my $k (1 .. $homeClustersPerCluster) {
+create global-caching home-cache-cluster <% $cachePrefix . $clusterPrefix . $clusterStartNum . $homeClusterPrefix . $k %>
+exit
+exit
+%           }
+%           for my $k (1 .. $cacheTopicsPerCluster) {
+topic <% $cacheTopicPrefix . $k %>
+%           }
+%           $clusterStartNum = $clusterStartNum + 1;
+exit
+%       }
+%   }
+exit
+% }
+
+% } else {
+
+% for my $i ($cacheStartNum .. $cacheEndNum) {
+%   if ($detailedRemove) {
+%       if ($numClusters > 0) {
+distributed-cache <% $cachePrefix . $i %> message-vpn <% $msgVpn %>
+%           my $numClustersForCache = ($numClusters, $numClustersPerCache)[$numClusters > $numClustersPerCache];
+%           $numClusters = $numClusters - $numClustersForCache;
+%           for my $j (1 .. $numClustersForCache) {
+cache-cluster <% $cachePrefix . $clusterPrefix . $clusterStartNum %>
+%               for my $k (1 .. $homeClustersPerCluster) {
+no global-caching home-cache-cluster <% $cachePrefix . $clusterPrefix . $clusterStartNum . $homeClusterPrefix . $k %>
+%               }
+%               for my $k (1 .. $cacheTopicsPerCluster) {
+no topic <% $cacheTopicPrefix . $k %>
+%               }
+%               if ($numInstances > 0) {
+%                   my $numInstancesForCluster = ($numInstances, $numInstancesPerCluster)[$numInstances > $numInstancesPerCluster];
+%                   $numInstances = $numInstances - $numInstancesForCluster;
+%                   for my $k (1 .. $numInstancesForCluster) {
+no cache-instance <% $cachePrefix . $instancePrefix . $instanceStartNum %>
+%                       $instanceStartNum = $instanceStartNum + 1;
+%                   }
+%               }
+exit
+no cache-cluster <% $cachePrefix . $clusterPrefix . $clusterStartNum %>
+%               $clusterStartNum = $clusterStartNum + 1;
+%           }
+exit
+%       }
+%   }
+no distributed-cache <% $cachePrefix . $i %> message-vpn <% $msgVpn %>
+% }
+
+% }
+
+end
+exit

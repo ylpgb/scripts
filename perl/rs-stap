@@ -1,0 +1,84 @@
+#!/usr/bin/env run-router-script
+#
+#  Install stap on the router for the current running kernel 
+#
+#  This script will install a few things on the specified router:
+#     * stap 
+#     * kernel build output
+#     * libaries
+#
+<%args>
+</%args>
+
+% chomp(my $me = `whoami`);
+
+% RrsSetTimeout(9000);
+
+
+# Get the kernel version
+<%script type="linux">
+uname -r
+% my $kernelVersion = $rrsLastResult;
+
+# Make kernel build directory on router
+echo $$
+% my $tmpDir = "/lib/modules/$kernelVersion/build";
+mkdir -p <% $tmpDir %>
+
+# First install the stap files onto the router
+% installFiles("stap", "~/systemtap-1.8", "/tmp");
+
+# Next install the built kernel
+% installFiles("Kernel", "/home/public/RND/loads/linux/$kernelVersion/", "/lib/modules/$kernelVersion/build");
+
+# install Gcc For the Kernel
+% installFiles("GCC", "/usr/local/gcc-4.1.1", "/usr/local");
+
+# install binutils for the kernel
+% installFiles("Binutils", "/usr/local/binutils-2.15.94.0.2.2", "/usr/local");
+
+# /usr/local/gcc-4.1.1/i686-pc-linux-gnu/lib/libssp.so
+% installFiles("libssp.so.0.0.0", "/usr/local/gcc-4.1.1/i686-pc-linux-gnu/lib/libssp.so.0.0.0", "/usr/local/lib/");
+
+cd /usr/local/lib
+ln -s libssp.so.0.0.0 libssp.so
+ln -s libssp.so.0.0.0 libssp.so.0
+
+#/usr/local/lib/liblzma.so.5.0.3
+% installFiles("liblzma.so", "/usr/local/lib/liblzma.so.5.0.3", "/usr/local/lib/");
+
+ln -s liblzma.so.5.0.3 liblzma.so.5
+
+ldconfig
+
+ldconfig /tmp/systemtap-1.8/lib/
+ldconfig /tmp/systemtap-1.8/lib/systemtap/lib/
+
+# Update kernel config to support stap
+for each in CONFIG_RELAY CONFIG_KPROBES CONFIG_DEBUG_INFO CONFIG_DEBUG_FS ; do sed -i "s/# $each is not set/$each=y/" /lib/modules/<% $kernelVersion %>/build/.config; done
+
+# Rebuild the kernel
+cd /lib/modules/<% $kernelVersion %>/build
+PATH=$PATH:/usr/local/gcc-4.1.1/bin:/usr/local/binutils-2.15.94.0.2.2/bin yes "" |make oldconfig
+PATH=$PATH:/usr/local/gcc-4.1.1/bin:/usr/local/binutils-2.15.94.0.2.2/bin make
+
+# Install the kernel
+if [ -e /dev/flashboot ]; then disk=`readlink /dev/flashboot`; mount /dev/${disk}1 /mnt/boot; yes y |cp arch/i386/boot/bzImage /mnt/boot/chosen/vmlinuz-2.6; umount /mnt/boot; fi
+yes y |cp -f arch/i386/boot/bzImage /boot/vmlinuz-2.6
+
+# Reboot
+echo "About to reboot"
+/sbin/shutdown -r -t secs now 
+
+<%perl>
+
+  sub installFiles {
+    my ($name, $fromDir, $toDir) = @_;
+
+    print "Copying $name files to the router...\n";
+    `rsync -rtlv $fromDir root\@$rrsRouterName:$toDir`;
+
+  }
+
+
+</%perl>

@@ -1,0 +1,47 @@
+#!/usr/bin/env run-router-script
+#
+#  This will do a typical router setup for most debuging
+#
+<%args>
+skipIf => 0
+</%args>
+
+# Call the interface configuration rs script
+% if (!$skipIf) {
+<& rs-config-if &>
+% }
+
+enable
+conf t
+
+client-username default message-vpn default
+  no shut
+exit
+
+# Enable the default message-vpn
+message-vpn default
+  authentication user-class client
+    auth-type none
+% if ($rrsLastResult =~ /Invalid command input/) {
+    basic auth-type none
+% }
+    exit
+  exit
+  export-policy export-subscriptions
+  no shut
+exit
+
+exit
+admin
+product-key 3jPKKu1dAVM-1DQwYtqWaes-AYWFeZtjZoo-0004
+exit
+config
+
+# Enable web messaging
+service web-transport
+
+% if ($rrsLastResult !~ /invalid/i) {
+no shutdown
+% }
+
+end

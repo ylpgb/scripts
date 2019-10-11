@@ -1,0 +1,23 @@
+#!/usr/bin/env run-router-script
+#
+#  This will set up the lag 1 interface to the recommended value and
+#  add the default route.
+#
+<%args>
+num_times => 100000   # Number of reboots
+</%args>
+<%script type="linux">
+
+% RrsSetTimeout(1000);
+% while($num_times--) {
+%   while(1) {
+      cli -A -es /dev/null
+%     if ($rrsLastResult !~ /Startup still/) {
+%       last;
+%     }
+%   }
+  
+  sleep 1
+  service solace restart
+
+% }

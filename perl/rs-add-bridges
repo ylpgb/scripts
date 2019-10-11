@@ -1,0 +1,148 @@
+#!/usr/bin/env run-router-script
+#
+#  This script will add the specified number of bridges 
+#  to the router.
+#
+
+<%args>
+$bn => "b"           # Prefix string for the bridge name
+$vn => "vpn"         # Prefix string for the local VPN
+$vnr => ""           # Prefix string for the remote VPN
+$bc                  # Number of bridges to add
+$bs => 1             # Starting bridge number
+$rip                 # IP and port of the remote router (port defaults to 55555)
+$int => ""           # Local interface to use for the bridge connections
+$q => ""             # Name of remote AD queue
+$qn => ""            # Prefix string for the queue name
+$sub => ""           # Remote bridge subscription
+$subn => ""          # Remote bridge subscription prefix
+$sf => ""            # File that contains subscriptions to add to the bridge
+$cu => "default"     # Client username for remote bridges
+$cn => ""            # Prefix string for the client-username
+$cuVnrBased => 1     # Client username is remote VPN based
+$cccf => ""          # Certificate file for remote bridges if using client-certificate authentication
+$as => ""            # Authentication scheme for remote bridges (basic or client-certificate)
+$bb => 0             # Want backup bridges
+$zf => 1             # Want zero fill names
+$noCreate => 0       # Flag to turn off creation of bridges
+$ttl => 0            # Value to set for maximum ttl
+$cmp => 0            # Want compression
+$ssl => 0            # Want SSL
+$cs => ""            # Cipher suite ("default" will set the list to default cipher suite list)
+$csf => ""           # File that contains cipher suites to add
+$tcn => ""           # Trusted common name
+$tcnf => ""          # File that contains trusted common names to add
+$rem => 0            # Remove subscriptions
+$vnoffset => 0       # Offset in the VPN number for the remote message-vpn
+$flv => 0            # Fixed local VPN name
+</%args>
+
+<%perl>
+my @topics;
+# If a subscription file is provided, get the topics from that
+if ($sf ne "") {
+  open(FH, $sf ) or die "Could not open file $sf\n";
+  @topics = <FH>;
+  $sub = "";
+} elsif ($sub ne "") {
+  @topics = ($sub);
+} else {
+  @topics = ();
+}
+my @cipherSuites;
+# If a cipher suite file is provided, get the cipher suites from that
+if ($csf ne "") {
+    open(FH, $sf ) or die "Could not open file $sf\n";
+    @cipherSuites = <FH>;
+    $cs = "";
+} elsif ($cs ne "") {
+    @cipherSuites = ($cs);
+} else {
+    @cipherSuites = ();
+}
+my @trustedCommonNames;
+# If a trusted common name file is provided, get the trusted common names from that
+if ($tcnf ne "") {
+    open(FH, $sf ) or die "Could not open file $sf\n";
+    @trustedCommonNames = <FH>;
+    $tcn = "";
+} elsif ($tcn ne "") {
+    @trustedCommonNames = ($tcn);
+} else {
+    @trustedCommonNames = ();
+}
+if ($vnr eq "") {
+  $vnr = $vn;
+} 
+</%perl>
+
+enable
+con t
+
+% for my $i ($bs .. $bc) {
+
+% if ($flv == 0) {
+    <% ($noCreate) ? "" : "create" %> bridge <% $bn . (($zf) ? sprintf("%05d", $i) : sprintf("%d", $i)) %>  message-vpn <% $vn . (($zf) ? sprintf("%05d", $i) : sprintf("%d", $i)) %>  <% ($bb) ? "backup" : "" %>
+% } else {
+    <% ($noCreate) ? "" : "create" %> bridge <% $bn . (($zf) ? sprintf("%05d", $i) : sprintf("%d", $i)) %>  message-vpn <% $vn %>  <% ($bb) ? "backup" : "" %>
+% }
+% if ($noCreate == 1) {
+    shutdown
+% }
+# Create the remote VPN
+% if ($int ne "") {
+    <% ($noCreate) ? "" : "create" %> remote message-vpn <% $vnr . (($zf) ? sprintf("%05d", $i + $vnoffset) : sprintf("%d", $i+$vnoffset)) %> connect-via <% $rip %> interface <% $int %>
+% } else {
+    <% ($noCreate) ? "" : "create" %> remote message-vpn <% $vnr . (($zf) ? sprintf("%05d", $i + $vnoffset) : sprintf("%d", $i+$vnoffset)) %> connect-via <% $rip %> 
+% }
+
+% if ($cuVnrBased == 1) {
+%   if ($cn) {
+      client-username <% $cn . (($zf) ? sprintf("%05d", $i + $vnoffset) : sprintf("%d", $i + $vnoffset)) %>
+%   } else {
+      client-username <% $cu %>
+%   }
+% }
+<% ($cmp) ? "compress" : "" %>
+<% ($ssl) ? "ssl" : "" %>
+<% ($q) ? "message-spool queue $q" : "" %>
+% if ($qn) {
+    message-spool queue <% $qn . (($zf) ? sprintf("%05d", $i + $vnoffset) : sprintf("%d", $i + $vnoffset)) %>
+% }
+no shut
+exit
+% if (@topics) {
+%   for my $topic (@topics) {
+      <% ($rem) ? "no" : "" %>  subscription <% $topic %>
+%   }
+% } elsif ($subn ne "") {
+    <% ($rem) ? "no" : "" %>  subscription <% "$subn$i" %>
+% }
+% if ($cuVnrBased == 0) {
+%   if ($cn) {
+      authentication basic client-username <% $cn . (($zf) ? sprintf("%05d", $i + $vnoffset) : sprintf("%d", $i + $vnoffset)) %>
+%   } else {
+      authentication basic client-username <% $cu %>
+%   }
+% }
+<% ($cccf) ? "authentication client-certificate certificate-file $cccf" : "" %>
+<% ($as) ? "authentication auth-scheme $as" : "" %>
+exit
+<% ($ttl) ? "shut" : "" %>
+<% ($ttl) ? "max-ttl $ttl" : "" %>
+% if (@cipherSuites) {
+    ssl cipher-suite empty
+%   for my $cipherSuite (@cipherSuites) {
+      ssl cipher-suite name <% $cipherSuite %>
+%   }
+% }
+% for my $trustedCommonName (@trustedCommonNames) {
+    ssl trusted-common-name name <% $trustedCommonName %>
+% }
+no shut
+exit
+
+% }
+
+end
+exit

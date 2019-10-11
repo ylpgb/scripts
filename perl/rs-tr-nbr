@@ -1,0 +1,242 @@
+#!/usr/bin/env run-router-script
+#
+# Creates a network of routers (TR mode only)
+#
+<%args>
+clean   => 0       # Remove all existing neighbors before start
+type    => "mesh"  # Type of network: mesh, chain, loop or none (none will remove all neighbors)
+status  => 0       # Just show the status of all the neighbors
+compressed => 0    # Set to 1 to have neighbor connections be compressed
+</%args>
+
+% use Data::Dumper;
+% use Graph::Easy;
+
+% RrsShowOutput(0);
+
+% my @validTypes = qw{mesh chain loop none};
+% Fatal("Invalid type: $type.  Allowed types: @validTypes\n") if (!grep(/^$type$/, @validTypes));
+
+% # make an array of all the IPs and ports for the routers
+% my @routerInfo; 
+
+% for my $i (0 .. ($rrsNumRouters-1)) {
+% print "Learning configuration of $rrsRouterNames[$i]...\n";
+<%script router-num="$i" type="cli">
+enable
+show router-name
+% ($routerInfo[$i]{Name}) = ($rrsLastResult =~ /Router Name:\s+([^\s]+)/);
+
+show service
+% if ($compressed) {
+%   ($routerInfo[$i]{DataPort}) = ($rrsLastResult =~ /SMF.*msg-backbone\s+Yes\s+No\s+(?:(?:Yes|No)\s*)?(\d+)/);
+%   if (!defined($routerInfo[$i]{DataPort})) {
+%     ($routerInfo[$i]{DataPort}) = ($rrsLastResult =~ /SMF.*MsgBB\s+(\d+)\s[UD] [UD] N Y N/);
+%     if (!defined($routerInfo[$i]{DataPort})) {
+%       ($routerInfo[$i]{DataPort}) = ($rrsLastResult =~ /SMF.*TCP N Y N MsgBB\s+(\d+)\s[UD] [UD]/);
+%     }
+%   }
+%   if (!defined($routerInfo[$i]{DataPort})) {
+%     ($routerInfo[$i]{DataPort}) = ($rrsLastResult =~ /SMF.*N Y N.*\s(\d+)/);
+%   }
+% } else {
+%   ($routerInfo[$i]{DataPort}) = ($rrsLastResult =~ /SMF.*msg-backbone\s+No\s+No\s+(?:(?:Yes|No)\s*)?(\d+)/);
+%   if (!defined($routerInfo[$i]{DataPort})) {
+%     ($routerInfo[$i]{DataPort}) = ($rrsLastResult =~ /SMF.*MsgBB\s+(\d+)\s[UD] [UD] N N N/);
+%     if (!defined($routerInfo[$i]{DataPort})) {
+%       ($routerInfo[$i]{DataPort}) = ($rrsLastResult =~ /SMF.*TCP N N N MsgBB\s+(\d+)\s[UD] [UD]/);
+%     }
+%   }
+%   if (!defined($routerInfo[$i]{DataPort})) {
+%     ($routerInfo[$i]{DataPort}) = ($rrsLastResult =~ /SMF.*N N N.*\s(\d+)/);
+%   }
+% }
+% ($routerInfo[$i]{CtrlPort}) = ($rrsLastResult =~ /SMF.*msg-backbone\s+No\s+Yes\s+(?:(?:Yes|No)\s*)?(\d+)/);
+% if (!defined($routerInfo[$i]{CtrlPort})) {
+%   ($routerInfo[$i]{CtrlPort}) = ($rrsLastResult =~ /SMF.*MsgBB\s+(\d+)\s[UD] [UD] N N Y/);
+%   if (!defined($routerInfo[$i]{CtrlPort})) {
+%     ($routerInfo[$i]{CtrlPort}) = ($rrsLastResult =~ /SMF.*TCP N N Y MsgBB\s+(\d+)\s[UD] [UD]/);
+%   }
+% }
+% if (!defined($routerInfo[$i]{CtrlPort})) {
+%   ($routerInfo[$i]{CtrlPort}) = ($rrsLastResult =~ /SMF.*N N Y.*\s(\d+)/);
+% }
+
+show routing
+% my ($routingInterface) = ($rrsLastResult =~ /Routing Interface:\s*([^\s]+)/);
+% my ($routingVrf) = ($rrsLastResult =~ /Routing Interface:.*\s([^\s]+) VRF/);
+% Fatal("Invalid or missing routing interface on router $rrsRouterNames[$i]") if (!defined $routingInterface);
+
+% $routingVrf = "msg-backbone" if (!defined $routingVrf) ;
+
+show ip vrf <% $routingVrf %>
+% ($routerInfo[$i]{Ip}) = ($rrsLastResult =~ /$routingInterface:\d+\s+static\s+([\d\.]+)/);
+% Fatal("Invalid or missing $routingVrf static ip address on router $rrsRouterNames[$i]") if (!defined $routerInfo[$i]{Ip} || $routerInfo[$i]{Ip}=~/\.0/);
+
+% }
+
+% goto showStatus if $status;
+
+% # If clean is specified or the type is 'none', then we have to remove all the existing neighbors
+% if ($type eq 'none' || $clean) {
+%   for my $i (0 .. ($rrsNumRouters-1)) {
+%     print "Removing old neighbors on $rrsRouterNames[$i]...\n";
+      <%script router-num="$i" type="cli">
+      show cspf neighbor *
+%     foreach my $neighbor ($rrsLastResult =~ /\n([^\s]+)\s+\d+\//g) { # Note that this doesn't yet cope with wrapped neighbor names
+        end
+        config
+        routing cspf
+%       print "  no neighbor $neighbor\n";
+        no neighbor <% $neighbor %>
+%     }
+%   }
+% }
+
+% # if type is none, then we are done
+% exit if ($type eq 'none');
+
+
+# Create the neighbors - either in a mesh, loop or a chain
+
+% # Loop through each router
+% for my $i (0 .. ($rrsNumRouters-1)) {
+
+%   # Enable routing
+    <%script router-num="$i" type="cli">
+
+    end
+    config
+    routing
+    no shutdown
+
+%   if ($rrsLastResult =~ /error/i) {
+%     print "Failed to enable routing:\n$rrsLastResult\n";
+%     exit 1;
+%   }
+
+%   # Make list of neighbors for this router - note that self neighbors will be filtered out later
+%   my @nbrs;
+%   if ($type eq "mesh") {
+%     @nbrs = (0 .. ($rrsNumRouters-1));
+%   }
+%   elsif ($type eq "loop") {
+%     @nbrs = (($i-1)%$rrsNumRouters, ($i+1)%$rrsNumRouters);
+%   }
+%   elsif ($type eq "chain") {
+%     if ($i == 0) {
+%       @nbrs = (1);
+%     }
+%     elsif ($i == $rrsNumRouters-1) {
+%       @nbrs = ($i-1);
+%     }
+%     else {
+%       @nbrs = (($i-1)%$rrsNumRouters, ($i+1)%$rrsNumRouters);
+%     }
+%   }
+
+%   for my $j (@nbrs) {
+%     next if ($i == $j); # Skip self
+%     print "Configuring neighbor from $rrsRouterNames[$i] to $rrsRouterNames[$j]...\n";
+
+      <%script router-num="$i" type="cli">
+
+      end
+      config
+      create routing cspf neighbor <% $routerInfo[$j]{Name} %> connect-via <% $routerInfo[$j]{Ip} %>:<% $routerInfo[$j]{DataPort} %> control-port <% $routerInfo[$j]{CtrlPort} %> <% $compressed ? "compressed-data" : "" %>
+%     # Adding the new neighbor create routines
+      create routing cspf neighbor <% $routerInfo[$j]{Name} %>
+          connect-via <% $routerInfo[$j]{Ip} %>:<% $routerInfo[$j]{DataPort} %>
+	  control-port <% $routerInfo[$j]{CtrlPort} %>
+	  <% $compressed ? "compressed-data" : "" %>
+	  no shutdown
+      end
+
+%   }
+% }
+
+
+% # Loop through each router and display the neighbors
+%showStatus:
+% for my $i (0 .. ($rrsNumRouters-1)) {
+%   print "\n\n##### NEIGHBOR CONFIGURATION ON $rrsRouterNames[$i] #####\n\n";
+    <%script router-num="$i" type="cli">
+    show cspf neighbor *
+%   print "$rrsLastResult\n";
+% }
+
+% showTopology(getNbrStatus());
+
+
+<%perl>
+
+sub getNbrStatus {
+
+  my %nbrInfo;
+  for my $i (0 .. ($rrsNumRouters-1)) {
+
+</%perl>
+    <%script router-num="$i" type="cli">
+    show cspf neighbor *
+<%perl>
+    my @neighbors = ($rrsLastResult =~ /\n([^\s]+\s+\d+\/[\d\-]+\s+\w+)/g);
+
+    foreach my $neighbor (@neighbors) {
+      my ($name, $dport, $cport, $status) = ($neighbor =~ /^([^\s]+)\s+(\d+)\/([\d\-]+)\s+(\w+)/);
+      $nbrInfo{$routerInfo[$i]{Name}}{Neighbors}{$name}{Status} = $status;
+      $nbrInfo{$routerInfo[$i]{Name}}{Neighbors}{$name}{Dport}  = $dport;
+      $nbrInfo{$routerInfo[$i]{Name}}{Neighbors}{$name}{Cport}  = $cport;
+      $nbrInfo{$routerInfo[$i]{Name}}{Neighbors}{$name}{Name}   = $name;
+      $nbrInfo{$routerInfo[$i]{Name}}{Name} = $rrsRouterNames[$i];
+    }
+  }
+
+  return \%nbrInfo;
+
+}
+
+sub showTopology {
+  my ($nbrInfo_p) = @_;
+  # We now have the neighbor info from the router
+  
+  # Draw the topology
+  my $graph = Graph::Easy->new();
+  
+  my %nodes;
+  foreach my $router (sort(keys(%{$nbrInfo_p}))) {
+    $nodes{$router} = 1;
+    # print "Adding node for: $nbrInfo_p->{$router}{Name}\n";
+    foreach my $neighbor (sort(keys(%{$nbrInfo_p->{$router}{Neighbors}}))) {
+      $nodes{$neighbor} = 1;
+    }
+  }
+
+  map {$graph->add_node($_)} keys(%nodes);
+  
+  foreach my $router (sort(keys(%{$nbrInfo_p}))) {
+  
+    foreach my $neighbor (sort(keys(%{$nbrInfo_p->{$router}{Neighbors}}))) {
+      
+      my @nodes = sort($router, $neighbor);
+      my $edge = $graph->edge(@nodes);
+      if ($edge) {
+        $edge->bidirectional(1);
+      } else {
+        # print "Adding edge for $nbrInfo_p->{$router}{Name} to $nbrInfo_p->{$router}{Neighbors}{$neighbor}{Name}\n";
+        $edge = $graph->add_edge_once(@nodes);
+      }
+      
+      if ($nbrInfo_p->{$router}{Neighbors}{$neighbor}{Status} !~ /ok/i) {
+        $edge->set_attribute('style', 'dotted');
+      }
+    }
+  }
+
+  # Clear the screen and draw the topology
+  print "\n\n##### NETWORK TOPOLOGY #####\n";
+  print $graph->as_ascii();
+
+}
+
+
+</%perl>

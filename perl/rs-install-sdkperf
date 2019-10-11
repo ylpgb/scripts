@@ -1,0 +1,83 @@
+#!/usr/bin/env run-router-script
+#
+#  This will install the latest version of sdkperf for the specified
+#  release onto the router
+#
+<%args>
+$release      => "1.17"                               # Which release of sdkperf to install
+$loads_dir    => "/home/public/RND/loads/pubSubTools" # Where are the loads
+$install_dir  => "/root/sdkperf.install"              # Where sdkperf is placed
+$sdkperf_name => ""                                   # What to call the exec on the router
+</%args>
+
+
+<%perl>
+
+$release =~ s/^d//;
+if ($release !~ /\./) {
+  $release = "1.$release";
+}
+
+# Find the latest version for the specified release
+chdir("/tmp");  # Fixes a problem I can't explain
+my $mostRecent = `ls -rtd $loads_dir/$release*/*Linux* |tail -1`;
+chomp($mostRecent);
+$mostRecent =~ s/\/[^\/]*$//;
+
+if ($mostRecent eq "") {
+  Fatal("Can't find a recent set of tools for release $release.  Looked for: $loads_dir/$release*/CPPCSMP_Linux*");
+}
+
+
+print "\n";
+
+my ($version) = ($mostRecent =~ /([^\/]+)$/);
+my $sdkperf = "$mostRecent/CPPCSMP_Linux26-i386-gcc33_opt/pubSubTools/sdkperf_cpp";
+my $lib     = "$mostRecent/CPPCSMP_Linux26-i386-gcc33_opt/pubSubTools/lib";
+
+if (! -r $sdkperf) {
+  $sdkperf = "$mostRecent/Linux-i386-gcc33_CPPCSMP_opt/pubSubTools/sdkperf_cpp";
+  $lib     = "$mostRecent/Linux-i386-gcc33_CPPCSMP_opt/pubSubTools/lib";
+  if (! -r $sdkperf) {
+    Fatal("Can't find sdkperf: $sdkperf");
+  }
+}
+
+
+# Hop over onto the router and create a directory for sdkperf
+$install_dir .= ".$release";
+</%perl>
+<%script type="linux">
+
+cd /root
+mkdir -p <% $install_dir %>
+
+<%perl>
+
+my $sdkperfName;
+if ($sdkperf_name ne "") {
+  $sdkperfName = $sdkperf_name;
+}
+else {
+  $sdkperfName = "sdkperf_cpp_$version";
+}
+
+# Copy the file to the box
+Msg("Installing sdkperf version $version...");
+`addkeyto $rrsRouterName`;
+
+# Use rsync in case it is already there - copying the lib directory takes a while
+`rsync -avu $sdkperf root\@${rrsRouterName}:$install_dir/$sdkperfName`;
+`rsync -avu $lib root\@${rrsRouterName}:$install_dir`;
+
+</%perl>
+
+
+%# Add a file to source to fix the LD_LIBRARY_PATH
+<%script type="linux">
+rm -f <% $install_dir%>/sdkperf_cpp
+ln -s <% "$install_dir/$sdkperfName" %> <% $install_dir %>/sdkperf_cpp
+echo 'export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:<% $install_dir %>/lib' > <% $install_dir %>/SOURCE_ME
+
+% Msg("sdkperf version $version has been installed on ${rrsRouterName} as $install_dir/$sdkperfName");
+

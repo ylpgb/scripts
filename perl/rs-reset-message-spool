@@ -1,0 +1,28 @@
+#!/usr/bin/env run-router-script
+#
+# This will reset the message-spool.  Redundancy and message-spooling
+# must both be shutdown.
+#
+
+<%args>
+nodeIndex => 0            # index in list of routers to use
+opmode => 2               # CR=2 and TR=3
+</%args>
+
+% if ($rrsRouterName =~ /simulator/) { return; }
+
+# Make sure the index exists
+<%perl>
+if ($rrsNumRouters <= $nodeIndex) {
+    die "Can't use node Index $nodeIndex.  Only $rrsNumRouters in list";
+}
+</%perl>
+
+<%script router-num="$nodeIndex" type="cli">
+home
+enable
+admin
+% if ($opmode == 3) {
+    system
+% }
+message-spool reset

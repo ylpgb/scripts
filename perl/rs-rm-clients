@@ -1,0 +1,21 @@
+#!/usr/bin/env run-router-script
+#
+#  This script will add the specified number of subs with the specified prefix
+#  to the router.
+#
+<%args>
+$cn                  # Prefix string for the subscribers
+$cc                  # Number of subscribers to add
+</%args>
+
+enable
+con t
+
+% for my $i (1 .. $cc) {
+
+no client <% $cn . sprintf("%04d", $i) %>
+
+% }
+
+end
+exit

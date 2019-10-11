@@ -1,0 +1,254 @@
+#!/usr/bin/env run-router-script
+#
+#  This script will deploy a VMR version to an ESXi host.
+#  It uses tools installed on sol-qa-01. 
+#
+<%args>
+version                       # The VMR version to deploy
+toolhost => "sol-qa-01"       # The host that contains the VMware config tools. Must have passwordless ssh access to this host.
+esxinet => "VM Network"       # The network in ESXi to make the VMR part of. The default is the default network after a ESXi install.
+datastore => "datastore1"     # The datastore where to deploy the VMR image to. The default is the default datastore after an ESXI install.
+numvmr    => 1                # The number of VMRs to deploy.
+startnum => 1                 # The starting index number for the name of the VMR. The name will be VMR_<version>_<index>.
+vmrtype   => "enterprise"     # The type of the VMR package: enterprise or evaluation.
+name => ""                    # Override the name to be assigned to the VM.  If specified, "numvmr" must be set to "1".
+
+</%args>
+
+% use XML::Simple;
+% use Data::Dumper; 
+% RrsSetTimeout(10);
+
+% my $esxi = $rrsRouterIps[0];
+
+% my $idx=$startnum;
+
+% if ( ($numvmr > 1) && ($name ne "") ) { warn "Cannot specify 'name' when numvmr > 1.\n"; exit 1; }
+
+% while ($idx <= $numvmr) {
+
+# Deploy the VMR  
+% print "Deploying VMR to $esxi...\n";
+% my $vmName = "VMR_".$version."_".$idx;
+% if ( $name ne "" ) { $vmName = $name };
+% my $vmId = deployVmrToEsxi($esxi, $version, $toolhost, $esxinet, $datastore, $vmName, $vmrtype);
+
+# Figure out the MAC address
+ 
+% print "Determine the MAC address of the VMR...\n";
+% my $mac = getMacAddress($esxi, $vmName, $toolhost, $datastore);
+
+# Find the IP address for the MAC
+% print "Waiting for VMR to come up to find its IP address...\n";
+# Wait for the VMR to start up
+% sleep 8;
+% my $ipAddr = "";
+% my $loop = 1;
+% while (($ipAddr eq "") and ($loop <= 30 )) {
+%   $ipAddr = getIpAddress($esxi, $toolhost, $mac);
+%   $loop++;
+%   print "VMR not up yet, waiting for next poll...\n";
+%   sleep 8;
+% }
+
+% if ($ipAddr eq "") {$ipAddr = "Could not determine";print "Could not determine IP address of VMR at $esxi, $toolhost, $mac\n";};
+% print "\n\nName of the VMR: \t\t$vmName\n";
+% print "VM ID: \t\t\t\t$vmId\n";
+% print "MAC address of the VMR: \t$mac\n";
+% print "IP address of the VMR: \t\t$ipAddr\n";
+
+% $idx++;
+% } ; #end of while
+
+% exit;
+
+<%perl>
+
+  sub deployVmrToEsxi {
+    my ($esxi, $vmrnum, $toolhost, $esxinet, $datastore, $name, $type) = @_;
+    # Deploy the VMR
+    my $cmd = "ssh $toolhost \"ovftool --name=\'$name\' --datastore=\'$datastore\' --noSSLVerify --machineOutput --overwrite --powerOffTarget --powerOn --net:\'Bridged=$esxinet\' /home/public/RND/loads/solcbr/vmr_$vmrnum/production/soltr-$vmrnum-vmr-$type.ova vi://root:solace1\@$esxi \" 2>/dev/null";
+
+
+    print "Running command: $cmd\n";
+
+    my $result = `$cmd`;
+
+    #print $result;
+
+    if ($result =~ m/RESULT\n\+ SUCCESS/) {
+        print "VMR deployed successfully\n";
+        my ($vmId) = $result =~ m|vim.VirtualMachine:(\d+)|;
+        print "vmId: $vmId\n";
+        return $vmId;
+    } else {
+        print $result;
+        die "VMR deployment failed\n";
+    }
+
+
+  }
+
+  sub getMacAddress {
+    my ($esxi, $name, $toolhost, $datastore) = @_;
+
+#OLD    my $tempfile ="/tmp/rs.vmx";
+#NEW 
+    my @chars = ("a".."z");
+    my $randomstring; 
+    $randomstring .= $chars[rand @chars] for 1..8;
+    my $tempfile = "/tmp/rs.$randomstring.vmx";
+#END NEW
+    #my $cmd = "ssh $toolhost \"esxcli -u root -p solace1 -s $esxi vm process list\"";
+    
+    #esxi doesn't always use the directory you expect.  Sometimes you say esxi-128-236_06 and get esxi-128-236_06_01
+    #try to discover the correct directory.  Can't just wildcard it because vifs doesn't support it
+    #
+    my $cmd = "ssh $toolhost \'vifs --server $esxi --username root --password solace1 -D \"[$datastore]\"' 2>/dev/null";
+
+    print "Running command: $cmd\n";
+    my $result = `$cmd`;
+    print $result;
+    my $line;
+    my $actualName = $name;
+    my @lines = split('\n',$result);
+    chop @lines;
+    foreach $line (@lines) {
+        if ($line =~ $name) {
+            $actualName = $line;
+            last;
+        } else {
+            next;
+        }
+    }
+    print "The actual name is: $actualName\n";
+
+
+    $cmd = "ssh $toolhost \'vifs --server $esxi --username root --password solace1 -g \"[$datastore] $actualName/$actualName.vmx\" $tempfile\' 2>/dev/null";
+
+    print "Running command: $cmd\n";
+    $result = `$cmd`;
+    print $result;
+
+    if ($result =~ m/successfully/) {
+        #print "Got vmx file\n";
+    } else {
+        print $result;
+        die "Failed to get vmx file\n";
+    }
+
+    $cmd = "ssh $toolhost \"grep 'ethernet0.generatedAddress =' $tempfile\" 2>/dev/null";
+    print "Running command: $cmd\n";
+    $result = `$cmd`;
+    #print $result;
+    my ($mac) = $result =~ m|\"(.+)\"|;
+    
+    #print "mac: $mac\n";
+
+    $cmd = "ssh $toolhost \"rm $tempfile\" 2>/dev/null";
+    print "Running command: $cmd\n";
+
+    return uc($mac);
+
+  }
+
+ sub powerOffVmr {
+    my ($esxi, $name, $toolhost, $datastore) = @_;
+
+    # This method is a work in progress
+    my $cmd = "ssh $toolhost \"vmware-cmd -U root -P solace1 -H $toolhost \'[$datastore] $name/$name.vmx\' stop hard\% 2>/dev/null";
+
+    print "Running command: $cmd\n";
+    my $result = `$cmd`;
+    print $result;
+
+    if ($result =~ m/successfully/) {
+        print "Got vmx file\n";
+    } else {
+        print $result;
+        die "Failed to get vmx file\n";
+    }
+
+
+  }
+
+  sub getIpAddress {
+    my ($esxi, $toolhost, $mac) = @_;
+
+#OLD    my $tempfile ="/tmp/rs.xml";
+#NEW 
+    my @chars = ("a".."z");
+    my $randomstring; 
+    $randomstring .= $chars[rand @chars] for 1..8;
+    my $tempfile = "/tmp/rs.$randomstring.xml";
+#END NEW
+
+    #my $cmd = "ssh $toolhost \"esxcli -u root -p solace1 -s $esxi vm process list\"";
+    my $cmd = "ssh $toolhost \'nmap --privileged -e eth1 -oX $tempfile -sn 192.168.131.100-255\' 2>/dev/null";
+
+    print "Running command: $cmd\n";
+    my $result = `$cmd`;
+    #print $result;
+
+    if ($result =~ m/Nmap done/) {
+        #print "Got namp info\n";
+    } else {
+        print $result;
+        die "Failed to get nmap info\n";
+    }
+
+
+    $cmd = "scp $toolhost:$tempfile $tempfile 2>/dev/null";
+    print "Running command: $cmd\n";
+    $result = `$cmd`;
+    #print $result;
+    #
+    #
+    #   
+    #       
+    my $xmlref = XMLin($tempfile, ForceArray => 1);
+    $cmd = "rm $tempfile 2>/dev/null";
+    $result = `$cmd`;
+    $cmd = "ssh $toolhost \'rm $tempfile 2>/dev/null\'";
+    $result = `$cmd`;
+    #print Dumper($xmlref);
+    my $xml = XMLout($xmlref);
+    #print $xml;
+
+    #foreach my $key (keys(%$xmlref)) {
+    #    print "$key\n";
+    #}
+
+    my $harrayref = $xmlref->{host};
+
+    #print @$harrayref;
+    my $matchingRef;
+    foreach my $ref (@$harrayref) {
+        
+        #print "$ref\n";
+        my $aref = $ref->{address};
+        #print "$ref->{address}\n";
+        foreach $a (@$aref) {
+            if ($a->{addrtype} eq "mac") {
+                if ($a->{addr} eq $mac) {
+                    $matchingRef = $aref;
+                }
+            }
+        }
+    }
+    #print Dumper($matchingRef); 
+    my $ipAddr = "";
+    foreach $a (@$matchingRef) {
+        if ($a->{addrtype} eq "ipv4") {
+            $ipAddr = $a->{addr};
+        }
+    }
+
+    #print "$ipAddr\n";
+
+    return $ipAddr;
+
+  }
+
+
+</%perl>

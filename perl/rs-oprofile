@@ -1,0 +1,252 @@
+#!/usr/bin/env run-router-script
+#
+#  Run the tool 'oprofile' on the router, get back the results and 
+#  do some analysis.
+#
+#  This script will install a few things on the specified router:
+#     * Set of executables to run oprofile
+#     * Kernel loadable module for oprofile
+#
+<%args>
+  $leave_samples => 0  # Set to 1 if you don't want the script to remove the samples from the router when complete
+  $events => 0     # Control the events that are being sampled
+</%args>
+
+% chomp(my $me = `whoami`);
+% my $localDir = "/tmp/$me/$$/oprofile";
+% my $execDir = (!-r "/usr/local/devtools/efunnekotter/oprofile/bin/opcontrol") ?
+%      "/usr/local/devtools/efunnekotter/oprofile/bin" : "/home/efunnekotter/devtools/efunnekotter/oprofile/bin";
+
+
+% RrsSetTimeout(360);
+
+
+# Get the kernel version
+<%script type="linux">
+uname -r
+% my $kernelVersion = $rrsLastResult;
+
+uname -m
+% my $arch = $rrsLastResult;
+
+# Make a place on the router to keep all the stuff
+echo $$
+% my $tmpDir = "/tmp/$me/$rrsLastResult/oprofile";
+mkdir -p <% $tmpDir %>
+
+# First install the oprofile files onto the router
+% installOprofile($kernelVersion, $arch, $execDir);
+
+# Load the kernel module
+test -e <% $tmpDir %>/oprofile.ko && insmod <% $tmpDir %>/oprofile.ko
+
+# Make sure oprofile is not already running
+echo 0 > /proc/sys/kernel/nmi_watchdog
+<% $tmpDir %>/bin/opcontrol --deinit
+<% $tmpDir %>/bin/opcontrol --reset
+<% $tmpDir %>/bin/opcontrol --shutdown
+<% $tmpDir %>/bin/opcontrol --setup --separate=all `if [ -n <%$arch%> ] && [ <%$arch%> = "x86_64" ]; then echo --no-vmlinux; else echo --vmlinux=<%$tmpDir%>/vmlinux; fi`
+<% $tmpDir %>/bin/opcontrol --reset
+
+# Wait for user to start the sampling
+% print "Hit ENTER to start sampling..."; <STDIN>;
+
+% my $eventParam = ($events ? "--event=$events" : "");
+<% $tmpDir %>/bin/opcontrol --start <% $eventParam %>
+% print "Sampling underway...\n";
+
+# Wait for user to stop the sampling
+% print "Hit ENTER to stop sampling..."; <STDIN>;
+
+<% $tmpDir %>/bin/opcontrol --dump 
+<% $tmpDir %>/bin/opcontrol --stop 
+
+# Copy the results back to local machine
+% getSamplesFromRouter();
+
+# Clear out all the stuff from the router
+# <% $tmpDir %>/bin/opcontrol --reset 
+<% $tmpDir %>/bin/opcontrol --shutdown 
+
+# Find the location of the build
+strings /usr/sw/loads/currentload/bin/dataplane | grep 'src/docProcessHwThread.cpp'
+% my ($buildLocation) = ($rrsLastResult =~ /^(.*?solcbr)/);
+% print "Build location: $buildLocation\n";
+
+# Fix the paths in the samples directory to point to local files
+% fixSamplesPaths($buildLocation);
+ 
+# # Finally get rid of our temp directory
+# rm -rf <% $tmpDir %>
+
+% createReportWrappers($localDir, $execDir);
+
+% print "To get reports, run:\n";
+% print "  Basic:               $localDir/opreport --long-filenames --merge tgid\n";
+% print "  Detailed:            $localDir/opreport --details --merge tgid\n";
+% print "  Executable specific: $localDir/opreport --merge tgid -l image:<long-filename to exec>\n";
+% print "  Annotated source:    $localDir/opannotate --merge tgid --source\n";
+% print "  Annotated assembly:  $localDir/opannotate --merge tgid --assembly\n";
+% print "\n  Run $localDir/opreport --help for more\n\n";
+
+<%perl>
+
+  sub installOprofile {
+    my ($version, $arch, $execDir) = @_;
+
+    $version =~ s/64bitS/s/;
+    my $dir = "/home/public/RND/loads/linux/$version";
+    my $archPath = "i386";
+
+    # First check the env var CVSWD
+    if (defined $ENV{'CVSWD'}) {
+        my $kernelMake=$ENV{'CVSWD'} . "/solcbr/build/kernel.mk";
+        open (KERNELMAKEINFO, "<", $kernelMake) or 
+             die "CVSWD not set to a vrs32 directory";
+        my %buildVar = map { chomp; $_ =~ s/export //; split /=/ } 
+                       <KERNELMAKEINFO>;
+        close (KERNELMAKEINFO);
+        my $kernType = "LINUX_2_6_KERNEL";
+        if ($arch =~ /64/ && defined $buildVar{$kernType . "_64BIT"}) {
+            $kernType .= "_64BIT";
+            $archPath = $arch;
+        }
+
+        my $kernelVersion = $buildVar{KERNEL_VER};
+        my $kernelPath = $buildVar{$kernType};
+        if (defined $kernelVersion) {
+            print "Kernel version=" . $kernelVersion  . "\n";
+            $kernelPath =~ s/\${KERNEL_VER}/$kernelVersion/;
+        }
+        my $kernelVersionFile = $kernelPath . 
+                                 "/include/linux/utsrelease.h";
+        if ( ! -e $kernelVersionFile ) {
+            $kernelVersionFile = $kernelPath .
+                                 "/include/generated/utsrelease.h";
+        }
+        open (KERNVERSIONFILE, "<", $kernelVersionFile) or
+             die "Cannot open kernel version file, $kernelVersionFile";
+        my $foundVersion = <KERNVERSIONFILE>;
+        chomp $foundVersion;
+        $foundVersion =~ s/#define UTS_RELEASE \"//;
+        $foundVersion =~ s/\".*$//;
+        close (KERNVERSIONFILE);
+        print("Developer version: $foundVersion\n");
+        # Check that the kernel version matches what is running
+        if ($foundVersion =~ /$version/) {
+            print("Developer version = Router Version\n");
+            $dir = $kernelPath;
+        }
+        print("Kernel Path = $dir\n");
+    }
+
+    if ($arch =~ /64/) {
+        $archPath = $arch;
+    }
+
+    # Find the kernel module
+    if (! -r $dir . "/$archPath") {
+      if (! -r $dir) {
+          Fatal("Can't find linux kernel source.  Expected in: $dir");
+      }
+    } else {
+        $dir .= "/$archPath";
+    }
+
+    my $vmlinux = "$dir/vmlinux";
+    my $oprof_is_mod = `fgrep -q "CONFIG_OPROFILE=y" $dir/.config`;
+    my $oprofKo = "$dir/arch/$archPath/oprofile/oprofile.ko";
+
+    if (! -r $vmlinux) {
+      Fatal("Can't find vmlinux kernel executable: $vmlinux");
+    }
+
+    if ($oprof_is_mod && ! -r $oprofKo) {
+      Fatal("Can't find oprofile kernel module: $oprofKo");
+    }
+
+    # We have the goods - copy them to the router
+    print "Copying oprofile components to router...\n";
+    `addkeyto $rrsRouterName`;
+    print "  oprofile executables...\n";
+    `scp -r $execDir root\@$rrsRouterName:$tmpDir`;
+    print "  vmlinux for kernel samples...\n";
+    `scp $vmlinux root\@$rrsRouterName:$tmpDir`;
+    if ($oprof_is_mod) {
+        print "  oprofile kernel module...\n";
+        `scp $oprofKo root\@$rrsRouterName:$tmpDir`;
+    }
+    print "  oprofile unit_masks and events...\n";
+    `scp -r /home/efunnekotter/devtools/efunnekotter/oprofile/events root\@$rrsRouterName:/usr/local/share/oprofile`;
+
+  }
+
+  sub createReportWrappers {
+    my ($tmpDir) = @_;
+    `echo "#!/bin/sh\nexport OPROFILE_EVENTS_DIR=/home/efunnekotter/play/oprofile-0.9.6/events \nexec $execDir/opreport session:$tmpDir/samples/current \\\$*\n" > $tmpDir/opreport`;
+    `chmod 777 $tmpDir/opreport`;
+    `echo "#!/bin/sh\nexport OPROFILE_EVENTS_DIR=/home/efunnekotter/play/oprofile-0.9.6/events \nexec $execDir/opannotate session:$tmpDir/samples/current \\\$*\n" > $tmpDir/opannotate`;
+    `chmod 777 $tmpDir/opannotate`;
+  }
+
+
+  sub getSamplesFromRouter {
+
+    # Make a local temp directory for the stuff
+    `mkdir -p $localDir/samples`;
+
+    print "Copying samples from router to: $localDir/samples\n";
+    `scp -r root\@$rrsRouterName:/var/lib/oprofile/samples/current $localDir/samples`;
+
+    print "To get reports, use the session string: $localDir/samples/current\n";
+    print " e.g.  /usr/local/devtools/bin/opreport session:$localDir/samples/current --details\n\n";
+
+  }
+
+
+  sub fixSamplesPaths {
+    my ($buildLocation) = @_;
+
+    if (!$buildLocation) {
+      Warn("Can't fix local paths to point to local build executables.  You will have to run opreport on the router itself.");
+      return;
+    }
+
+    # Get a list of all the files generated by the profiler
+    my @samples = `find $localDir/samples/current -not -type d`;
+
+    my $printOnce = 0;
+    foreach my $sample (@samples) {
+      if ($sample =~ /\/usr\/sw\/loads\/([^\/]*)/) {
+        my $loadName = $1;
+        my $objDir;
+        if (1 ||$loadName =~ /opt/) {
+          $objDir = "obj_lm_opt";
+        }
+        else {
+          $objDir = "obj_lm_debug";
+          if (!$printOnce) {
+            $printOnce = 1;
+            print "I question your choice in running the profiler on an unoptimized load.  You are likely wasting your time.\n";
+          }
+        }
+        # Candidate for fixing
+        my $newDir = $sample;
+        my $oldDir = $sample;
+        $newDir =~ s/\/usr\/sw\/loads\/[^\/]*/$buildLocation\/$objDir/g;
+        $newDir =~ s/\/[^\/]+$//;
+        $oldDir =~ s/\/[^\/]+$//;
+
+        #print "$oldDir -> $newDir\n";
+        `mkdir -p $newDir`;
+        `mv $oldDir/* $newDir`;
+        # `mv $oldDir $newDir`;
+
+      }
+    }
+
+
+  }
+  
+
+</%perl>

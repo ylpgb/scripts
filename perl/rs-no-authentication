@@ -1,0 +1,21 @@
+#!/usr/bin/env run-router-script
+#
+#  This will disable pubsub authentication
+#
+
+# Verify version
+show hardware
+% if ($rrsLastResult =~ /System Type.*topic-routing.*/)
+% {   # Call rs-tr-no-auth
+      <& rs-tr-no-auth &>
+% }
+% else
+% {
+      enable
+      conf t
+      authentication user-class pubsub
+      auth-type none
+      end
+      exit
+% }
+ 

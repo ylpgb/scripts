@@ -1,0 +1,22 @@
+#!/bin/bash
+
+if [[ -f build-environment.mk ]]; then
+    source build-environment.mk
+elif [[ -f build-env/build/build-environment.mk ]]; then
+    source build-env/build/build-environment.mk
+elif [[ -f ${CVSWD}/build-env/build/build-environment.mk ]]; then
+    source ${CVSWD}/build-env/build/build-environment.mk
+fi
+
+RUN_PATH=""
+if [[ -e ./run-dev-env-ce65 ]] || [[ -e ./run-dev-env-ce7 ]]; then
+    RUN_PATH="./"
+fi
+
+if [[ $BUILD_ENV_REPOSITORY == "devserver-centos7" ]]; then
+    echo "Running CentOS 7"
+    ${RUN_PATH}run-dev-env-ce7 "$@"
+else
+    echo "Running CentOS 6.5"
+    ${RUN_PATH}run-dev-env-ce65 "$@"
+fi

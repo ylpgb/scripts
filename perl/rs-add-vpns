@@ -1,0 +1,74 @@
+#!/usr/bin/env run-router-script
+#
+#  This script will add the specified number VPNs  
+#  to the router.
+#
+
+<%args>
+$vn => "vpn"         # Prefix string for the VPN name
+$vc                  # Number of VPNs to add
+$vs => 1             # Starting VPN number
+$rps => ""           # Starting REST port number
+$ms => 60000         # Maximum spool usage for the VPN 
+$q => ""             # Queue to create on each message VPN
+$qn => ""            # Prefix string for the queue name
+$t => ""             # Topic to add to the queue
+$tn => ""            # Topic prefix to add to the queue
+$zf => 1             # Want zero fill names
+$es => 0             # Want to set export subscription policy
+$at => "none"        # Authentication type
+$cca => 0            # Want client-certificate authentication enabled
+$ccaAllowApiUsername => 0   # Allow API provided username for client-certificate authentication
+$ccaMaxChainDepth => 3      # Maximum certificate chain depth for client-certificate authentication
+$ccaValCertDate => 1        # Validate certificate date for client-certificate authentication
+$noCreate => 0       # Flag to turn off creation of VPNs
+</%args>
+
+enable
+con t
+
+% my $restPort = $rps;
+% for my $i ($vs .. $vc) {
+
+<% ($noCreate) ? "" : "create" %> message-vpn <% $vn . (($zf) ? sprintf("%05d", $i) : sprintf("%d", $i)) %> 
+authentication user-class client
+auth-type <% $at %>
+% if ($cca) {
+    client-certificate
+    no shutdown
+    <% ($ccaAllowApiUsername) ? "" : "no" %> allow-api-provided-username
+    max-certificate-chain-depth <% $ccaMaxChainDepth %>
+    <% ($ccaValCertDate) ? "" : "no" %> validate-certificate-date
+    exit
+% }
+exit
+exit
+<% ($es) ? "export-policy export-subscriptions" : "" %>
+no shut
+% if ($rps) {
+    service rest incoming listen-port <% $restPort %>
+    no service rest incoming plain-text shutdown
+% }
+% $restPort ++;
+exit
+message-spool message-vpn <% $vn . (($zf) ? sprintf("%05d", $i) : sprintf("%d", $i)) %>
+max-spool-usage <% $ms %>
+% if ($q or $qn) {
+    <% ($q) ? "create queue $q" : "" %>
+%   if ($qn) {
+      create queue <% $qn . (($zf) ? sprintf("%05d", $i) : sprintf("%d", $i)) %>
+%   }
+    permission all delete
+    <% ($t) ? "subscription topic $t" : "" %>
+    <% ($tn) ? "subscription topic $tn$i" : "" %>
+    no shut
+    exit
+% }
+exit
+client-username default message-vpn <% $vn . (($zf) ? sprintf("%05d", $i) : sprintf("%d", $i)) %>
+no shut
+exit
+% }
+
+end
+exit

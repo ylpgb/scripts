@@ -1,0 +1,164 @@
+#!/usr/bin/env run-router-script
+#
+#  This will set up the lag 1 interface to the recommended value and
+#  add the default route.
+#
+<%args>
+router => 192.168.160.1   # IP of the router
+mate                      # name of the mate router (ex. lab-128-90)
+enable => 1               # whether or not to enable after config is done
+numConn => 4              # num of conns to configure in the cspf neighbor
+nodeIndex => 0            # index in list of routers to use
+opmode => 3               # CR=2 and TR=3
+</%args>
+
+# Make sure the index exists
+<%perl>
+if ($rrsNumRouters <= $nodeIndex) {
+    die "Can't use node Index $nodeIndex.  Only $rrsNumRouters in list";
+}
+</%perl>
+
+# need to do at least one command to get $rrsRouterName initialized
+<%script router-num="$nodeIndex" type="cli">
+enable
+exit
+
+<%perl>
+
+sub resolveAaRouterParams($)
+{
+    my $serverName = shift;
+    if ($serverName eq "localhost") {
+        $serverName = hostname();
+    }
+
+    my ($name,$aliases,$addrType,$len,@addrs) = gethostbyname($serverName);
+    my @octets = unpack('C4', $addrs[0]);   
+    my $vrrpVrid;
+    if ($octets[2] eq "128") {
+        $vrrpVrid = $octets[3] + 100; 
+    } elsif ($octets[2] eq "129") {
+        $vrrpVrid = $octets[3]; 
+    } elsif ($octets[2] eq "130") {
+        $vrrpVrid = $octets[3] + 200; 
+    } else {
+        die "Cannot calculate VRRP ID for $serverName\n";
+    }
+    $octets[2] -= 88;
+    $octets[2] *= 4;
+    my $ip = "$octets[0]." . "$octets[1]." . "$octets[2].";
+    my $csmpVridLastOctet = $octets[3] + 100;
+    my $csmpVrid = "$ip" . "$csmpVridLastOctet";
+    $ip .= "$octets[3]";
+    my $rvIp = "$octets[0].$octets[1]." . ($octets[2] == 128 ? 162 : 166) .
+      ".$octets[3]";
+    return ($ip,$csmpVrid,$vrrpVrid,$rvIp);
+}
+
+my ($mateIp,$mateCsmpVrid,$mateVrrpVrid,$mateRvIp) = resolveAaRouterParams($mate);
+my ($myIp,$myCsmpVrid,$myVrrpVrid,$myRvIp) =
+    resolveAaRouterParams($rrsRouterNames[$nodeIndex]);
+my $rvIntfName = 'unknown';
+
+</%perl>
+
+<%script type="linux">
+% printf "Opmode is: %d\n\n", $opmode;
+
+% if ($opmode == 3) {
+    <& rs-tr-setup &>
+% } else {
+    <& rs-config-if &>
+    <& rs-no-authentication &>
+% }
+
+<%script type="cli">
+show ip vrf msg-backbone
+% my @ipIntf;
+% if ($rrsLastResult =~ m|(\d+/\d+/lag\d+):(\d+)\s+primary|)
+% {
+%     $ipIntf[0] = $1;
+%     $ipIntf[1] = $1 . ":" . $2;
+%     $ipIntf[2] = $1 . ":" . ($2 + 1);
+% }
+
+  # create primary & backup ip interface
+  ena
+  configure
+  ip vrf msg-backbone
+  create interface <% $ipIntf[2] %> backup
+  ip-address <% $mateCsmpVrid %>/19
+  no shutdown
+  end
+  configure terminal
+
+  # Set the routing interface or rv interface as required
+% if ($opmode == 1) {
+      rv interface <% $ipIntf[1] %> primary
+      rv interface <% $ipIntf[2] %> backup
+% }
+% else {
+      service smf shutdown
+      routing
+      interface <% $ipIntf[0] %>
+      exit
+      no service smf shutdown
+% }
+
+  # configure our vrrp-vrids
+  redundancy
+  no active-standby-role
+  vrrp-vrid <% $myVrrpVrid %> primary
+  vrrp-vrid <% $mateVrrpVrid %> backup
+  end
+  configure terminal
+
+% if ($opmode == 1) {
+      # set ip address for rvgd interfaces
+      show interface
+%     if ($rrsLastResult =~ /eth0/) {
+%         $rvIntfName = "eth0";
+%     } else {
+%         $rvIntfName = "eth2";
+%     }
+
+      ip vrf management
+      interface <% $rvIntfName %>:1
+      ip-address <% $myRvIp %>/19
+      exit
+      interface <% $rvIntfName %>:2
+      ip-address <% $mateRvIp %>/19
+      end
+      configure terminal
+% }
+% if ($opmode == 2) {
+    #setup a neighbor to the mate
+    routing
+    create cspf neighbor <% $mateIp %> num-con <% $numConn %>
+    link-cost 1
+    end
+    configure
+    redundancy
+    mate-router <% $mateIp %>
+    exit
+% }
+% if ($opmode == 3) {
+      routing
+      create cspf neighbor <% $mate %> connect-via <% $mateIp %> num-con <% $numConn %>
+      link-cost 1
+      end
+      configure
+      redundancy
+      mate-router-name <% $mate %>
+      exit
+% }
+
+% if ($enable) {
+      redundancy
+      no shutdown
+% }
+
+# return to top level
+end
+exit

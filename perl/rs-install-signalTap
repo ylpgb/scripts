@@ -1,0 +1,50 @@
+#!/usr/bin/env run-router-script
+#
+#  a router script to setup a target router for remote signalTap 
+#
+<%args>
+download => 0
+</%args>
+
+<%init>
+</%init>
+
+%my$bb = "/home/public/RND/loads/signalTap/byteblaster"; 
+%my$NORM  = "\e[0m";
+%my$BOLDr  = "\033[31m\e[1m";  # Red
+%my$BOLDg  = "\033[32m\e[1m";  # Green
+%my$BOLD   = "\e[1m";
+
+<%script type="linux">
+
+%my$cmd; 
+%my$result;
+
+cd /usr/sw/loads/currentload/firmware
+find -name byteblaster
+
+%if($rrsLastResult eq "" || $download){ `scp -r $bb root\@$rrsRouterIp:/usr/sw/loads/currentload/firmware`; }
+
+cd byteblaster
+find /etc -name jtagd
+
+%if($rrsLastResult eq ""){
+    touch /root/.jtag.conf
+    mkdir /etc/jtagd 
+    /bin/cp jtagd.config /etc/jtagd
+%}
+
+/bin/cp remote_signal_tap /etc/init.d
+service remote_signal_tap start
+
+%my$readme = `cat /home/public/RND/loads/signalTap/readme`;
+%print("$BOLDg\n=================================================================================================$NORM");
+%print("$BOLDg\nfile /home/public/RND/loads/signalTap/readme:$NORM");
+%print("$BOLD\n$readme\n");
+%print("$BOLDg -  Note that this integrated SignalTap approach does not work well with router reboots and crashes.\n");
+%print("$BOLDg    Quartus will likely hang on a router reboot.                                                    \n");
+%print("$BOLDg=================================================================================================\n$NORM");
+
+
+
+ 

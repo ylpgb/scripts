@@ -1,0 +1,72 @@
+#!/usr/bin/env run-router-script
+#
+# This script will verify whether the rs-dma-rand-test completed and report errors
+# Assumption is that rs-remove-debug-log was run before test was kicked off
+
+%# Open up debug.log and search for errors and test complete
+
+<%perl>
+
+my $pass         = 1;
+my $testComplete = 0;
+
+# Wait 15 minutes or for the test complete
+while ($pass <= 90 && $testComplete == 0) {
+
+ print "Pass $pass -> Going to look at debug.log\n";
+ $testComplete = checkTestStatus();
+
+ sleep(10);
+ $pass++;
+}
+
+if ($testComplete == 0) {
+
+	print "ERROR: Test did not finish!\n";
+
+}
+
+
+</%perl>
+
+
+<%perl>
+
+ #Open debug.log and search for ERRORs and the test complete
+
+  sub checkTestStatus {
+
+   my $sawTestComplete = 0;
+
+    RrsShowOutput(0);
+</%perl>
+
+<%script type="linux">
+cat /usr/solace/jail/logs/debug.log
+
+<%perl>
+
+    RrsShowOutput(1);
+
+   foreach my $line (split(/\n/,$rrsLastResult)) {
+
+	# Check for the test complete string
+	if ($line =~ /WARN.+DMA test complete/) {
+
+	   print "Saw Test Complete in debug.log\n";
+
+           $sawTestComplete = 1;
+
+	}
+	elsif ($line =~ / ERROR /) {
+
+		print "ERROR $line\n";
+	}
+
+	}
+
+	return($sawTestComplete);
+
+}
+</%perl>
+

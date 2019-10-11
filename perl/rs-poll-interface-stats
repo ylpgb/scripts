@@ -1,0 +1,56 @@
+#!/usr/bin/env run-router-script
+<%args>
+$interval => 5         # Polling interval
+</%args>
+
+
+% RrsShowOutput(0);
+
+% my %last;
+% while (1) {
+
+show interface
+
+<%perl>
+
+  my @stats = ($rrsLastResult =~ /Interface: ([^\s\n]+)(?:\n|.)*?Rx bytes:\s*(\d+)(?:\n|.)*?Tx bytes:\s*(\d+)/g);
+  my %stats;
+
+  while (@stats) {
+     my $key = shift(@stats);
+     my $rx = shift(@stats);
+     my $tx = shift(@stats);
+     $stats{$key}{Rx} = $rx;
+     $stats{$key}{Tx} = $tx;
+  }
+  
+  my %rates;
+  
+  foreach my $if (keys(%stats)) {
+    my $diff = $stats{$if}{Rx} - $last{$if}{Rx};
+    $last{$if}{Rx} = $stats{$if}{Rx};
+    $rates{$if}{Rx} = $diff*8/$interval/1000000;  # Note that this will give higher results than
+                                                  # reality, but Time::HiRes is not installed...  
+    $diff = $stats{$if}{Tx} - $last{$if}{Tx};
+    $last{$if}{Tx} = $stats{$if}{Tx};
+    $rates{$if}{Tx} = $diff*8/$interval/1000000;  # Note that this will give higher results than
+                                                  # reality, but Time::HiRes is not installed...  
+  }
+  
+  foreach my $if (sort(keys(%rates))) {
+    printf ("%8s: rx: %4d Mbps   tx: %4d Mbps\n", $if, $rates{$if}{Rx}, $rates{$if}{Tx});
+  }
+  print "\n";
+  ReadMode 4;
+  my $char = ReadKey($interval);
+  ReadMode 0;
+  if (defined $char) {
+     if (($char eq "q") || ($char eq "")) {
+       ReadMode 0; last;
+     }
+  }
+}
+
+
+</%perl>
+

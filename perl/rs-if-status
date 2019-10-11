@@ -1,0 +1,227 @@
+#!/usr/bin/env /home/dhorton/svn/trunk/devtools/efunnekotter/run-router-script
+##!/usr/bin/env run-router-script
+
+## Display status of linux interfaces and routes on the given router.
+
+<%args>
+  ifs => "" 
+</%args>
+
+<%script type="linux"/>
+
+<%perl>
+
+    use Text::Table;
+
+RrsShowOutput(0);
+
+sub displayTable($) {
+    my $tbll = $_[0];
+    print($tbll->title());
+    print($tbll->rule('-', '+'));
+    print($tbll->body());
+    print("\n");
+}
+
+sub maskToLen($) {
+    my @bytes = split(/\./, $_[0]);
+    my $len = 0;
+    foreach my $b (@bytes) {
+	if ($b == 0xFF) {$len += 8;}
+	if ($b == 0xFE) {$len += 7;}
+	if ($b == 0xFC) {$len += 6;}
+	if ($b == 0xF8) {$len += 5;}
+	if ($b == 0xF0) {$len += 4;}
+	if ($b == 0xE0) {$len += 3;}
+	if ($b == 0xC0) {$len += 2;}
+	if ($b == 0x80) {$len += 1;}
+    }
+    return $len;
+}
+
+## Get all interfaces that actually exist.
+</%perl>
+find /sys/class/net -name "eth*" -or -name "lag*" | cut -d/ -f5
+<%perl>
+my @intfs = split(/\n/, $rrsLastResult);
+
+if ($ifs) {
+    @intfs = split(/,/, $ifs);
+}
+
+@intfs = sort(@intfs);
+
+my $sep = " | ";
+
+my $tbl1 = Text::Table->new("Name", \$sep, 
+			   "MAC", \$sep, 
+			   "Ip-Address", \$sep, 
+			   "Admin", \$sep, 
+			   "Oper", \$sep, 
+			   "Link", \$sep, 
+			   "Bond");
+foreach my $intf (@intfs) {
+</%perl>
+  /sbin/ifconfig <% $intf %> 2> /dev/null
+<%perl>
+  my @ifconfig = split(/\n/, $rrsLastResult);
+  if (!@ifconfig) {
+    next;
+  }
+
+  my %status = (name => $intf);
+  $status{addr} = "none";
+  $status{bond} = "no";
+
+  foreach my $line (@ifconfig) {
+    if ($line =~ m/Link encap:/) {
+        $line =~ s/.*HWaddr (\S*).*/$1/;
+        $status{mac} = $line;
+    }
+    if ($line =~ m/inet addr:/) {
+        my $addr = $line;
+        $addr =~ s/.*inet addr:(\S*).*/$1/;
+        my $mask = $line;
+        $mask =~ s/.*Mask:(\S*).*/$1/;
+        my $maskLen = maskToLen($mask);
+        $status{addr} = $addr . "/" . $maskLen;
+    }
+    if ($line =~ m/MTU:/) {
+        $status{admin} = ($line =~ m/ UP /) ? "up" : "down";
+    }
+    if ($line =~ m/MASTER/) {
+        $status{bond} = "master";
+    }
+    if ($line =~ m/SLAVE/) {
+        $status{bond} = "slave";
+    }
+  }
+
+  $status{link} = "?";
+
+</%perl>
+  cat /sys/class/net/<%$intf%>/operstate
+<%perl>
+  my $operstate = $rrsLastResult;
+  chomp($operstate);
+  $status{oper} = $operstate;
+
+</%perl>
+  /sbin/ethtool <%$intf%> 2> /dev/null | grep "Link detected:" | sed -e 's/^.* //'
+<%perl>
+  my $link = $rrsLastResult;
+  chomp($link);
+  $status{link} = $link;
+
+  $tbl1->load([$status{name},
+	      $status{mac},
+	      $status{addr},
+	      $status{admin},
+	      $status{oper},
+	      $status{link},
+	      $status{bond}]);
+}
+
+displayTable($tbl1);
+
+my $tbl2 = Text::Table->new("Name", \$sep, 
+			   "Destination", \$sep, 
+			   "Gateway", \$sep, 
+			   "Genmask", \$sep, 
+			   "Flags", \$sep, 
+			   "Ping");
+
+</%perl>
+/sbin/route
+<%perl>
+my @allRoutes = split(/\n/, $rrsLastResult);
+
+## Get rid of headers.
+shift(@allRoutes);
+shift(@allRoutes);
+
+foreach my $intf (@intfs) {
+  my %routes;
+
+  foreach my $route (@allRoutes) {
+    my ($dest, $gw, $gm, $flags, $metric, $ref, $u, $iface) = split(/ +/, $route);
+    chomp($iface);
+    if ($intf eq $iface) {
+      $routes{$dest}{gw} = $gw;
+      $routes{$dest}{gm} = $gm;
+      $routes{$dest}{flags} = $flags;
+
+</%perl>
+      /bin/ping <%$gw%> -c1 >& /dev/null
+      echo $?
+<%perl>
+      $routes{$dest}{ping} = $rrsLastResult eq 0 ? "yes" : "no"
+    }
+  }
+
+  foreach my $dest (keys %routes) {
+      $tbl2->load([$intf, $dest, 
+		  $routes{$dest}{gw}, 
+		  $routes{$dest}{gm},
+		  $routes{$dest}{flags}, 
+		  $routes{$dest}{ping}]);
+  }
+}
+
+displayTable($tbl2);
+
+my $tbl3 = Text::Table->new("Master", \$sep, 
+			   "Slaves", \$sep, 
+			   "Primary", \$sep, 
+			   "Active");
+foreach my $intf (@intfs) {
+</%perl>
+    find /sys/class/net -name <%$intf%> | cut -d/ -f5
+<%perl>
+    my $exists = $rrsLastResult;
+
+    if ($exists ne "" && $intf =~ m/lag/) {
+</%perl>
+        cat /sys/class/net/<%$intf%>/bonding/slaves
+<%perl>
+        my $slaves = $rrsLastResult;
+        chomp($slaves);
+
+</%perl>
+         cat /sys/class/net/<%$intf%>/bonding/primary
+<%perl>
+         my $primary = $rrsLastResult;
+         chomp($primary);
+
+</%perl>
+         cat /sys/class/net/<%$intf%>/bonding/active_slave
+<%perl>
+         my $active = $rrsLastResult;
+         chomp($active);
+
+         $tbl3->load([$intf, $slaves, $primary, $active]);
+    }
+}
+
+if ($tbl3->body_height() > 0) {
+    displayTable($tbl3);
+}
+
+my $tbl4 = Text::Table->new("Name", \$sep, "Config File");
+
+foreach my $intf (@intfs) {
+  my $path = "/etc/sysconfig/network-scripts";
+
+</%perl>
+  find <%$path%> -name "*-<%$intf%>"
+<%perl>
+  my @configs = split(/\n/, $rrsLastResult);
+
+  foreach my $config(@configs) {
+    $tbl4->load([$intf, $config]);
+  }
+}
+
+displayTable($tbl4);
+
+</%perl>

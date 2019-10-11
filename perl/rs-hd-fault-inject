@@ -1,0 +1,83 @@
+#!/usr/bin/env run-router-script
+#
+#  Install stap on the router for the current running kernel 
+#
+#  This script will install the debug kernel on the router
+#
+<%args>
+</%args>
+
+% chomp(my $me = `whoami`);
+
+% RrsSetTimeout(9000);
+
+
+# Get the kernel version
+<%script type="linux">
+uname -r
+% my $kernelVersion = $rrsLastResult;
+
+fgrep debugfs_registered /proc/kallsyms
+% my $haveDebugfs = ( $rrsLastResult =~ /debugfs/ );
+
+
+% replaceKernel() unless($haveDebugfs);
+
+fgrep -q debugfs /proc/mounts || mount -t debugfs debugfs /sys/kernel/debug
+
+ls -l /sys/kernel/debug/
+
+% replaceKernel() unless($rrsLastResult =~ /sata/);
+
+<% script type="soldebug" %>
+:conn 2
+diskToAtaLink 0
+% my ($disk1Link) = $rrsLastResult =~ m/Ata Link Number ([0-9])/;
+diskToAtaLink 1
+% my ($disk2Link) = $rrsLastResult =~ m/Ata Link Number ([0-9])/;
+
+<%script type="linux">
+echo Disk 1 is link <% $disk1Link %>
+echo Disk 2 is link <% $disk2Link %>
+
+echo "All Done"
+
+<%perl>
+  sub replaceKernel {
+</%perl>
+<%script type="linux">
+readlink /dev/flashboot
+% my $flashdev = $rrsLastResult;
+
+#mount the flashboot device if present
+test -e /dev/flashboot && mount /dev/<% $flashdev %>1 /mnt/boot
+
+# Next install the built kernel
+% installKernel($kernelVersion, $flashdev);
+
+# Reboot
+echo "About to reboot to debug kernel, rerun script in 2 min"
+/sbin/shutdown -r -t secs now 
+<%perl>
+  }
+
+
+  sub installFiles {
+    my ($name, $fromDir, $toDir) = @_;
+
+    print "Copying $name files to the router @ $toDir\n";
+    `rsync -rtlv $fromDir root\@$rrsRouterName:$toDir`;
+
+  }
+
+  sub installKernel {
+      my ($kernelVersion, $flashdev) = @_;
+      if ($flashdev =~ /[sh][a-z]*/) {
+          installFiles("Kernel", "/home/public/RND/loads/linux/3.4/$kernelVersion" . "_debug/bzImage", "/mnt/boot/chosen/bzImage64");
+      } else {
+          installFiles("Kernel", "/home/public/RND/loads/linux/3.4/$kernelVersion" . "_debug/bzImage", "/boot/bzImage64");
+      }
+  }
+
+
+</%perl>

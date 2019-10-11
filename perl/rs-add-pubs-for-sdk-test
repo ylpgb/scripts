@@ -1,0 +1,105 @@
+#!/usr/bin/env run-router-script
+#
+#  This script will add the specified number of pubs with the specified prefix
+#  to the router.
+#
+<%args>
+$prefix => j         # Username prefix, j or cpp 
+$backup              # Optional backup keyword
+$profile => default  # Which profile to give them
+</%args>
+
+enable
+con t
+publisher <% $prefix %>_lgcy_per_meta_0001 <% $backup %>
+profile <% $profile %>
+exit
+publisher <% $prefix %>_lgcy_per_msg_0001 <% $backup %>
+profile <% $profile %>
+exit
+publisher <% $prefix %>_lgcy_per_metamsg_0001 <% $backup %>
+profile <% $profile %>
+exit
+publisher <% $prefix %>_lgcy_per_metaatt_0001 <% $backup %>
+profile <% $profile %>
+exit
+publisher <% $prefix %>_lgcy_per_msgatt_0001 <% $backup %>
+profile <% $profile %>
+exit
+publisher <% $prefix %>_lgcy_per_metamsgatt_0001 <% $backup %>
+profile <% $profile %>
+exit
+publisher <% $prefix %>_lgcy_non_meta_0001 <% $backup %>
+profile <% $profile %>
+exit
+publisher <% $prefix %>_lgcy_non_msg_0001 <% $backup %>
+profile <% $profile %>
+exit
+publisher <% $prefix %>_lgcy_non_metamsg_0001 <% $backup %>
+profile <% $profile %>
+exit
+publisher <% $prefix %>_lgcy_non_metaatt_0001 <% $backup %>
+profile <% $profile %>
+exit
+publisher <% $prefix %>_lgcy_non_msgatt_0001 <% $backup %>
+profile <% $profile %>
+exit
+publisher <% $prefix %>_lgcy_non_metamsgatt_0001 <% $backup %>
+profile <% $profile %>
+exit
+publisher <% $prefix %>_lgcy_dir_meta_0001 <% $backup %>
+profile <% $profile %>
+exit
+publisher <% $prefix %>_lgcy_dir_msg_0001 <% $backup %>
+profile <% $profile %>
+exit
+publisher <% $prefix %>_lgcy_dir_metamsg_0001 <% $backup %>
+profile <% $profile %>
+exit
+publisher <% $prefix %>_lgcy_dir_metaatt_0001 <% $backup %>
+profile <% $profile %>
+exit
+publisher <% $prefix %>_lgcy_dir_msgatt_0001 <% $backup %>
+profile <% $profile %>
+exit
+publisher <% $prefix %>_lgcy_dir_metamsgatt_0001 <% $backup %>
+profile <% $profile %>
+exit
+publisher <% $prefix %>_topic_per_meta_0001 <% $backup %>
+profile <% $profile %>
+exit
+publisher <% $prefix %>_topic_per_metamsg_0001 <% $backup %>
+profile <% $profile %>
+exit
+publisher <% $prefix %>_topic_per_metaatt_0001 <% $backup %>
+profile <% $profile %>
+exit
+publisher <% $prefix %>_topic_per_metamsgatt_0001 <% $backup %>
+profile <% $profile %>
+exit
+publisher <% $prefix %>_topic_non_meta_0001 <% $backup %>
+profile <% $profile %>
+exit
+publisher <% $prefix %>_topic_non_metamsg_0001 <% $backup %>
+profile <% $profile %>
+exit
+publisher <% $prefix %>_topic_non_metaatt_0001 <% $backup %>
+profile <% $profile %>
+exit
+publisher <% $prefix %>_topic_non_metamsgatt_0001 <% $backup %>
+profile <% $profile %>
+exit
+publisher <% $prefix %>_topic_dir_meta_0001 <% $backup %>
+profile <% $profile %>
+exit
+publisher <% $prefix %>_topic_dir_metamsg_0001 <% $backup %>
+profile <% $profile %>
+exit
+publisher <% $prefix %>_topic_dir_metaatt_0001 <% $backup %>
+profile <% $profile %>
+exit
+publisher <% $prefix %>_topic_dir_metamsgatt_0001 <% $backup %>
+profile <% $profile %>
+exit
+end
+exit

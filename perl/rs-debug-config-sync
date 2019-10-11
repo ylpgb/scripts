@@ -1,0 +1,127 @@
+#!/usr/bin/env run-router-script
+#
+# Script to gather useful informatino relating to config-sync for
+# debugging purposes. Both CLI and SOLDEBUG content are fetched.
+#
+# There can be a lot of output. Consider redirecting to a file and include
+# in buginfo when reporting problems.
+
+<%args>
+cli      => 1         # Gather info from CLI.
+soldebug => 1         # Gather info from SOLDEBUG.
+repl     => 1         # Gather info for REPLICATION.
+</%args>
+
+<%perl>
+sub section($$) {
+  my ($type, $name) = @_;
+  print("*** $type - $name ***\n");
+}
+</%perl>
+
+
+<%script type = "cli">
+
+% if ($cli) {
+
+% section("CLI", "BASICS");
+
+show hostname
+show router-name
+show redundancy
+show service
+show message-spool
+show message-spool detail
+
+% section("CLI", "CONFIG-SYNC DATABASE");
+
+show config-sync
+show config-sync database
+show config-sync database router detail
+show config-sync database router remote
+show config-sync database message-vpn * detail
+show config-sync database message-vpn * remote
+
+% section("CLI", "CONFIG-SYNC QUEUES");
+
+show queue * message-vpn #config-sync
+show queue * message-vpn #config-sync detail
+show queue * message-vpn #config-sync subscriptions
+
+% if ($repl) {
+
+% section("CLI", "REPLICATION");
+
+show replication
+show message-vpn * replication
+show message-vpn * replication detail
+
+% section("CLI", "REPLICATION BRIDGES");
+
+show bridge * message-vpn #config-sync
+show bridge * message-vpn #config-sync detail
+show bridge #MSGVPN_REPLICATION_BRIDGE message-vpn *
+show bridge #MSGVPN_REPLICATION_BRIDGE message-vpn * detail
+
+% section("CLI", "REPLICATION QUEUES");
+
+show queue #MSGVPN_REPLICATION_DATA_QUEUE message-vpn *
+show queue #MSGVPN_REPLICATION_DATA_QUEUE message-vpn * detail
+% }
+
+% }
+
+<%script type = "soldebug">
+
+% if ($soldebug) {
+
+:conn 1
+
+% section("SOLDEBUG", "MPLIMO CONFIG-SYNC");
+
+mpliMoDump "config sync"
+
+% section("SOLDEBUG", "MPLIMO MSG SERVICE");
+
+mpliMoDump "message service"
+
+<%perl>
+
+## Determine our set of table Ids. It is helpful to do some certain
+## displays per table to limit their output.
+
+my @serviceIds = split(/\n/, $rrsLastResult);
+@serviceIds = grep(/^id=/, @serviceIds);
+foreach (@serviceIds) {
+  s/id=(\d+).*/$1/;
+}
+my @tableIds = (-1, @serviceIds);
+foreach (@tableIds) {
+  $_ += 1;
+}
+
+</%perl>
+
+% section("SOLDEBUG", "CONFIG-SYNC");
+
+cfgSyncMplDisplay
+cfgSyncOperationalStateDisplay
+cfgSyncTimerDisplay
+
+% section("SOLDEBUG", "CONFIG-SYNC DATABASE");
+
+% foreach my $id (@tableIds) {
+cfgSyncDbDisplay <% $id %>, <% $id+1 %>
+% }
+
+% section("SOLDEBUG", "CONFIG-SYNC SESSION");
+
+cfgSyncSessionFsmDisplay
+
+% section("SOLDEBUG", "CONFIG-SYNC TABLE");
+
+% foreach my $id (@tableIds) {
+cfgSyncTableFsmDisplay <% $id %>, <% $id+1 %>
+% }
+
+% }

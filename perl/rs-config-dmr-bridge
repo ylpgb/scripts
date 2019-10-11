@@ -1,0 +1,77 @@
+#!/usr/bin/env run-router-script
+#
+
+# Configure a DMR bridge between 2 routers.
+#
+#
+# By default, the underlying clusters and external link which are
+# needed for the dmr-bridge are also created automatically through the
+# use of the 'rs-config-dmr' script. Alternatively this can be
+# skipped, which is useful if the clusters and link already exists, or
+# if 'rs-config-dmr' is used to configure the cluster and links in a
+# more arbitrary manner that this script uses.
+#
+# By default, the dmr-bridge is made between the "default" MsgVpn on
+# each router. However, this can be overridden to bridge between any
+# arbitrary pair of MsgVpns on the target routers.
+
+<%args>
+cc          => 1             # create underlying cluster and link
+vn          => "default"     # single "vpn-1" name or pair "vpn-1,vpn-2"
+</%args>
+
+% use Data::Dumper;
+
+<%perl>
+if ($rrsNumRouters != 2) {
+    die "Must give exactly 2 routers.  $rrsNumRouters have been given";
+}
+</%perl>
+
+% if ($cc) {
+<& rs-config-dmr, vpns => "$vn", span => "external" &>
+% }
+
+% my ($nn0, $nn1);
+
+<%script router-num="0" type="cli">
+show cluster *
+%   ($nn0) = ($rrsLastResult =~ /Node Name\s*:\s+([^\s]+)/);
+
+<%script router-num="1" type="cli">
+show cluster *
+%   ($nn1) = ($rrsLastResult =~ /Node Name\s*:\s+([^\s]+)/);
+
+% RrsShowOutput(1);
+
+% my @vpns = split(/,/,$vn);
+
+% my $vn0 = $vpns[0];
+% my $vn1 = $vpns[1];
+
+% if (!$vn1) {
+%   $vn1 = $vn0;
+% }
+
+<%script router-num="0" type="cli">
+home
+enable
+configure
+message-vpn <% $vn0 %>
+dynamic-message-routing
+! pragma:interpreter:ignore-already-exists
+create dmr-bridge <% $nn1 %>
+! pragma:interpreter:no-ignore-already-exists
+remote message-vpn <% $vn1 %>
+
+<%script router-num="1" type="cli">
+home
+enable
+configure
+message-vpn <% $vn1 %>
+dynamic-message-routing
+! pragma:interpreter:ignore-already-exists
+create dmr-bridge <% $nn0 %>
+! pragma:interpreter:no-ignore-already-exists
+remote message-vpn <% $vn0 %>
+

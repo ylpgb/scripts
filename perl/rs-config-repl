@@ -1,0 +1,149 @@
+#!/usr/bin/env run-router-script
+#
+#  Configure different aspects of replication on a single router
+#
+<%args>
+selfIdx    => "0"         # Index of our router
+mateIdx    => "1"         # Index of our replication mate router
+shutdown   => ""          # Shutdown VPN pattern (e.g. "vpn-*")
+active     => ""          # Active VPN pattern (e.g. "vpn-*")
+standby    => ""          # Standby VPN pattern (e.g. "vpn-*")
+cu         => "default"   # Replication bridge client-username
+</%args>
+
+<%perl>
+
+sub getVpns($) {
+  my ($pattern) = @_;
+
+</%perl>
+  show message-vpn <% $pattern %>
+<%perl>
+
+  my @names = ();
+
+  ## <pattern> may produce table or detailed display.
+  if ($rrsLastResult =~ m/\nMessage VPN:\s+(\S.*)/) {
+    @names = ($1);
+  }
+  else {
+    my ($vpns) = ($rrsLastResult =~ /-------\s*(\n(.|\n)*)$/);
+    if ($vpns) {
+      @names = ($vpns =~ /\n([A-Za-z0-9_-]+)\s/g);
+    }
+  }
+  return @names;
+}
+</%perl>
+
+## Start of script
+
+# Need to do a command to ensure $rrsRouterNames[] will be # initialized
+<%script router-num="$selfIdx" type = "cli">
+home
+<%script router-num="$mateIdx" type = "cli">
+home
+
+<%script router-num="$mateIdx" type = "cli">
+
+% my ($mateName, $mateIp, $matePort);
+
+% if ($rrsNumRouters == 2) {
+%   my $rtrName = $rrsRouterNames[$mateIdx];
+
+%   my $sim = $rrsRouterNames[$mateIdx] =~ m/simulator-\d+/;
+
+    show router-name
+
+%   ($mateName) = ($rrsLastResult =~ /Router Name:\s+(\S+)/);
+
+    show message-spool
+
+%   my $adEnabled = ($rrsLastResult =~ /Config Status:\s+Enabled/);
+%   if (!$adEnabled) { Fatal("Message-spooling not enabled on $rtrName"); }
+%   my $vr = "static";
+%   if (!$sim) {
+%       $vr = ($rrsLastResult =~ /Primary/) ? "primary" : "backup";
+%   }
+
+    show ip vrf msg-backbone
+
+%   ($mateIp) = ($rrsLastResult =~ /$vr\s+(\d{1,3}.\d{1,3}.\d{1,3}.\d{1,3})/);
+
+    show service
+
+%   ($matePort) = ($rrsLastResult =~ /SMF.+No\s+No\s+No\s+(\d+)/);
+%   if (!$matePort) {
+%     ($matePort) = ($rrsLastResult =~ /SMF.+MsgBB\s+(\d+)/);
+%   }
+% }
+
+<%script router-num="$selfIdx" type = "cli">
+
+## Global replication config
+% if ($mateName) {
+    home
+    enable
+    configure
+
+    show routing
+
+    replication mate virtual-router-name v:<% $mateName %> connect-via <% $mateIp %>
+    replication mate connect-port <% $matePort %>
+% }
+
+## Shutdown VPN replication config
+% if ($shutdown) {
+%   my @vpns = getVpns($shutdown);
+
+    home
+    enable
+    configure
+
+%   foreach my $vpn (@vpns) {
+
+      message-vpn <% $vpn %>
+        replication shutdown
+        replication bridge client-username <% $cu %>
+        exit
+
+%   }
+% }
+
+## Active VPN replication config
+% if ($active) {
+%   my @vpns = getVpns($active);
+
+    home
+    enable
+    configure
+
+%   foreach my $vpn (@vpns) {
+
+      message-vpn <% $vpn %>
+        replication state active
+        replication bridge client-username <% $cu %>
+	no replication shutdown
+        exit
+
+%   }
+% }
+
+## Standby VPN replication config
+% if ($standby) {
+%   my @vpns = getVpns($standby);
+
+    home
+    enable
+    configure
+
+%   foreach my $vpn (@vpns) {
+
+      message-vpn <% $vpn %>
+        replication bridge client-username <% $cu %>
+        replication state standby
+        no replication shutdown
+        exit
+
+%   }
+% }

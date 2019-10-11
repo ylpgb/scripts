@@ -1,0 +1,35 @@
+#!/usr/bin/env run-router-script
+#
+#  This script will add the specified number of subscriptions
+#  to the bridge.
+#
+
+<%args>
+$bn                  # Name of the bridge
+$vn                  # Name of the VPN
+$bb => 0             # Want backup bridges
+$tp                  # Subscription topic prefix
+$ns                  # Number of topic subscriptions
+$nz => 5             # Number of zeroes to fill subscription topic
+$rem => 0            # Want to remove subscriptions specified
+$noCreate => 1       # Flag to turn off creation of bridges
+</%args>
+
+<%perl>
+my @topics = ();
+for (my $x = 1; $x <= $ns; $x++) {
+  push (@topics, $tp . sprintf("%0${nz}d", $x))
+}
+</%perl>
+
+enable
+con t
+
+<% ($noCreate) ? "" : "create" %> bridge <% $bn %> message-vpn <% $vn %> <% ($bb) ? "backup" : "" %>
+remote
+% for my $topic (@topics) {
+<% ($rem) ? "no" : "" %> subscription <% $topic %>
+% }
+
+end
+exit

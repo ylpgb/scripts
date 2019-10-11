@@ -1,0 +1,40 @@
+#!/usr/bin/env run-router-script
+#
+#  This will remove all publishers on the box
+#
+
+<%args>
+$msgVpn => default      # messageVpn
+</%args>
+
+show queue * message-vpn <% $msgVpn %>
+
+<%perl>
+
+my ($queues) = ($rrsLastResult =~ /------\s*(\n(.|\n)*)$/);
+
+if (!defined $queues) {
+    return;
+}
+
+my @tmp = ($queues =~ /\n([A-Za-z0-9_\/#-.]+)\s/g);
+
+# Ignore queue names starting with '#'.
+my @names = grep(!/^#/, @tmp);
+
+</%perl>
+
+enable
+con t
+message-spool message-vpn <% $msgVpn %>
+
+
+% foreach my $q (@names) {
+queue <% $q %>
+shut
+exit
+no queue <% $q %>
+% }
+
+end
+exit

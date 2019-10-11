@@ -1,0 +1,46 @@
+#!/usr/bin/env run-router-script
+#
+#  This script will do everything necessary to generate a
+#  3206 core file, copy it back and launch gdb with that
+#  core file.
+#
+<%args>
+</%args>
+
+<%init>
+
+  if ($ENV{CVSWD} !~ /vrs32/) {
+    $ENV{CVSWD} .= "/vrs32";
+  }
+
+  my $gdb = "$ENV{CVSWD}/luna/third-party/CN3XXX-SDK/tools/bin/mipsisa64-octeon-elf-gdb";
+  if (! -x $gdb) {
+    Fatal("Can't find gdb executable: $gdb");
+  } 
+
+</%init>
+
+
+%# Generate the core file
+<%script type="linux">
+% RrsSetTimeout(30);
+% print "Generating core file...\n";
+/usr/solace/loads/currentload/bin/oct-pci-core 0x100000 /tmp/core.linecard >/dev/null
+
+<%perl>
+
+  # Next copy the dataplane executable and core back to your box
+  my $execFile = "./dataplane.$rrsRouterName.$$";
+  my $coreFile = "./dataplane.core.$rrsRouterName.$$";
+  `addkeyto $rrsRouterName`;
+  print "Copying 3206 firmware file locally...\n";
+  `scp root\@$rrsRouterName:cl/firmware/3206/dataplane $execFile`;
+
+  print "Copying 3206 core file locally...\n";
+  `scp root\@$rrsRouterName:/tmp/core.linecard $coreFile`;
+
+  # Start GDB
+  system "$gdb $execFile $coreFile; rm -f $execFile; rm -f $coreFile";
+
+</%perl>
+

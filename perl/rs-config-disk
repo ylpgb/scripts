@@ -1,0 +1,34 @@
+#!/usr/bin/env run-router-script
+#
+# This will set the message-spool disk-array wwn 
+#
+<%args>
+router => 192.168.160.1   # IP of the router
+nodeIndex => 0            # index in list of routers to use
+opmode => 2               # CR=2 and TR=3
+</%args>
+
+% if ($rrsRouterName =~ /simulator/) { return; }
+
+# Make sure the index exists
+<%perl>
+if ($rrsNumRouters <= $nodeIndex) {
+    die "Can't use node Index $nodeIndex.  Only $rrsNumRouters in list";
+}
+</%perl>
+
+# need to do at least one command to get $rrsRouterName initialized
+<%script router-num="$nodeIndex" type="cli">
+home
+enable
+configure
+show hardware detail
+% my ($wwn) = ($rrsLastResult =~ /WWN\:\s+(\S+)/);
+% if ($opmode == 3) {
+    hardware
+% }
+message-spool
+disk-array wwn <% $wwn %>
+end
+exit
+ 

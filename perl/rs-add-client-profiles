@@ -1,0 +1,58 @@
+#!/usr/bin/env run-router-script
+#
+#  This script will add the specified number of client-profiles 
+#  to the router.
+#
+
+<%args>
+$pn                  # Prefix string for the client-profiles
+$vn => "vpn"         # Prefix string for the message-vpn
+$pvn => "default"    # Fixed name when spanning VPNs
+$vpn => "default"    # Fixed name when spanning profiles
+$cpVpnBased => 0     # Client-profile is vpn based. 1 maps unique profile to unique VPN. 2 adds multiple profiles to same VPN. 3 adds same profile to multiple VPNs.
+$pc                  # Number of client-profiles to add
+$abc => 0            # Allow bridge connections
+$agec => 0           # Allow guaranteed endpoint create
+$agmr => 0           # Allow guaranteed message receive
+$agms => 0           # Allow guaranteed message send
+$zf => 1             # Want zero fill names
+$vzf => 1            # VPN has zero fill names
+$noCreate => 0       # Flag to turn off creation of client-profiles
+</%args>
+
+enable
+con t
+
+% for my $i (1 .. $pc) {
+
+% if ($cpVpnBased == 1) {
+    <% ($noCreate) ? "" : "create" %> client-profile <% $pn . (($zf) ? sprintf("%05d", $i) : sprintf("%d", $i)) %> message-vpn <% $vn . (($vzf) ? sprintf("%05d", $i) : sprintf("%d", $i)) %>
+% } elsif ($cpVpnBased == 2) {
+    <% ($noCreate) ? "" : "create" %> client-profile <% $pn . (($zf) ? sprintf("%05d", $i) : sprintf("%d", $i)) %> message-vpn  <% $vpn %>
+% } elsif ($cpVpnBased == 3) {
+    <% ($noCreate) ? "" : "create" %> client-profile <% $pvn %> message-vpn <% $vn . (($zf) ? sprintf("%05d", $i) : sprintf("%d", $i)) %>
+% } else {
+    <% ($noCreate) ? "" : "create" %> client-profile <% $pn . (($zf) ? sprintf("%05d", $i) : sprintf("%d", $i)) %>
+% }
+% if ($abc) {
+    allow-bridge-connections
+% }
+
+message-spool
+% if ($agec) {
+    allow-guaranteed-endpoint-create
+% }
+% if ($agmr) {
+    allow-guaranteed-message-receive
+% }
+% if ($agms) {
+    allow-guaranteed-message-send
+% }
+exit
+
+exit
+
+% }
+
+end
+exit

@@ -1,0 +1,100 @@
+#!/usr/bin/env run-router-script
+#
+
+# Create buginfo dir and copy files from a router.  Files are put into
+# router-specific subdirectories.  Optionally a 'root' subdirectory
+# may be specified as well (useful for separating logs collected on
+# different days, or different runs of a test).  Files are only
+# collected if changed within 24 hours, unless the 'since' option is
+# provided.
+#
+# The files collected are:
+#   jail/logs/*
+#   jail/diags/*
+#   currentloads/db/*
+#
+# The 'since' arg supports typical relative time in natural language,
+# such as 'yesterday', '1pm today', 'last Friday', or '3 fortnights
+# ago'.  Note that this can be somewhat misleading for logs as they
+# are renamed after having been originally generated, so you may get
+# more than you were expecting.
+
+<%args>
+bug                          # The bug number.
+subdir     => ""             # Subdir to put files in.
+since      => "24 hours ago" # Date to collect from.
+loadver    => "currentload"  # Maybe you want to collect for a different version
+</%args>
+
+## Start of script
+
+<%perl>
+my $buginfo = "/home/public/RND/buginfo";
+my $bugdir = "$buginfo/$bug";
+mkdir $bugdir;
+
+my $tgtdir = "$bugdir";
+if ($subdir ne "") {
+  $tgtdir = "$tgtdir/$subdir";
+  mkdir $tgtdir;
+}
+
+my $rtrdir = "$tgtdir/$rrsRouterName";
+mkdir $rtrdir;
+
+## It can take a while to tar, in particular the cores.
+RrsSetTimeout(900); ## 15 min
+RrsShowOutput(0);
+
+## Put $since in single quotes.
+$since = "\'$since\'";
+
+</%perl>
+
+<%script type="linux"/>
+% print("Gathering logs...\n");
+cd /usr/sw/jail
+tar -c --newer-mtime <% $since %> -zhf /tmp/rs-buginfo-logs.tar.gz logs
+% print("Gathering diags...\n");
+cd /usr/sw/jail
+tar -c --newer-mtime <% $since %> -zhf /tmp/rs-buginfo-diags.tar.gz diags
+% print("Gathering db...\n");
+cd /usr/sw/var
+cd `readlink -f /usr/sw/loads/<% $loadver %> | xargs basename`
+tar -c -zhf /tmp/rs-buginfo-db.tar.gz db .dbHistory
+cd /usr/sw/loads
+cd <% $loadver %>
+tar -c -zhf /tmp/rs-buginfo-db-old.tar.gz db .dbHistory
+% print("Gathering cores...\n");
+cd /usr/sw/jail
+tar -c --newer-mtime <% $since %> -zhf /tmp/rs-buginfo-cores.tar.gz cores
+% print("Gathering configs...\n");
+cd /usr/sw/jail
+tar -c --newer-mtime <% $since %> -zhf /tmp/rs-buginfo-configs.tar.gz configs
+
+
+<%perl>
+print("Transfering files to $rtrdir...\n");
+chdir $rtrdir;
+if (system("scp -P2222 root\@$rrsRouterName:/tmp/rs-buginfo-*.tar.gz .")) {
+   system("scp -P22 root\@$rrsRouterName:/tmp/rs-buginfo-*.tar.gz .");
+}
+
+print("Uncompressing files...\n");
+system("tar xzf rs-buginfo-logs.tar.gz");
+unlink("rs-buginfo-logs.tar.gz");
+system("tar xzf rs-buginfo-diags.tar.gz");
+unlink("rs-buginfo-diags.tar.gz");
+system("tar xzf rs-buginfo-db.tar.gz");
+unlink("rs-buginfo-db.tar.gz");
+system("tar xzf rs-buginfo-db-old.tar.gz");
+unlink("rs-buginfo-db-old.tar.gz");
+rename("rs-buginfo-cores.tar.gz", "cores.tar.gz");
+rename("rs-buginfo-configs.tar.gz", "configs.tar.gz");
+
+print("Fixing ownership...\n");
+system("chmod -R 777 $rtrdir");
+</%perl>
+
+
+

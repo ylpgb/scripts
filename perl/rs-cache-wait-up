@@ -1,0 +1,62 @@
+#!/usr/bin/env run-router-script
+#
+#  Examine the router and clear the lost message events on all caches
+#
+<%args>
+</%args>
+
+% RrsSaveShowOutput();
+% RrsShowOutput(0);
+
+enable
+admin
+
+# Get the distributed caches
+% print "\nChecking that cache instances are all up...\n";
+
+<%perl>
+my $allUp;
+do {
+  $allUp = 1;
+
+</%perl>
+
+# Get all the cache instances
+show cache-instance * detail
+
+<%perl>
+  my ($currInst, $isUp);
+  foreach my $line (split(/\n/, $rrsLastResult)) {
+    if ($line =~ /Cache Instance\s*:\s*([\w\d_\-\.]+)/) {
+      $currInst = $1;
+    }
+    elsif ($line =~ /Operational Status\s*:\s*(\w+)/i) {
+      $isUp = $1;
+    }
+    elsif ($line =~ /Last Heartbeat/) {
+      if (defined $currInst) {
+        if (defined $isUp) {
+          # For debugging.
+          #print "Instance $currInst op status: $isUp\n";
+          if (!($isUp =~ /up/i)) {
+            $allUp = 0;
+          }
+        }
+        undef $currInst;
+        undef $isUp;
+      }
+    }
+  } 
+
+  if ($allUp != 1) {
+    sleep 1
+  }
+} while ($allUp != 1);
+
+print "Result: $allUp\n";
+
+</%perl>
+
+end
+
+% RrsRestoreShowOutput();

@@ -1,0 +1,28 @@
+#!/usr/bin/env run-router-script
+#
+#  This will do a typical router setup for most debuging
+#
+<%args>
+$c         # Count of pubs and subs
+$pn        # Publisher prefic name
+$sn        # Subscriber prefix name
+</%args>
+
+<& rs-config-if &>
+<& rs-no-authentication &>
+enable
+con t
+% for my $i (1 .. $c) {
+<& rs-typical-profile, cug => $i, profile => $pn . sprintf("%04d", $i) &>
+enable
+con t
+publisher <% $pn . sprintf("%04d", $i) %>
+profile <% $pn . sprintf("%04d", $i) %>
+exit
+subscriber <% $sn . sprintf("%04d", $i) %>
+profile <% $pn . sprintf("%04d", $i) %>
+exit
+end
+exit
+% }
+

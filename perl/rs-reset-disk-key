@@ -1,0 +1,12 @@
+#!/usr/bin/env run-router-script
+#
+#  This will reset the AD Key saved to the external disk WWN
+#
+<%script type="linux"/>
+df | grep mapper
+% foreach my $disk ( split(/\n/, $rrsLastResult) )
+% {
+%   if ($disk =~ m/mapper/) {
+      dd if=/dev/zero of=<% $disk %> bs=512 count=1
+%   }
+% }

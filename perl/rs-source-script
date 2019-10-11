@@ -1,0 +1,29 @@
+#!/usr/bin/env run-router-script
+#
+# This script will Copy a cli script to an appliance, then in the cli,
+# run source script the given number of times.
+#
+<%args>
+$repeat => 1         # Number of time to run the source command
+$file                # local CLI script filename
+arguments => ""	     # source script arguments
+timeout => 60        # seconds to wait for the source command to complete
+</%args>
+
+% use File::Basename;
+#% -r $file || die "can't read cli script file '$file': $!";
+% `rsync $file root\@${rrsRouterName}:/usr/sw/jail/cliscripts`;
+% my $bn = basename($file);
+
+enable
+
+% RrsSetTimeout($timeout);
+
+% for my $i (1 .. $repeat) {
+
+source script cliscripts/<% $bn %> <% $arguments %>
+
+% }
+
+end
+exit

@@ -1,0 +1,51 @@
+#!/usr/bin/env run-router-script
+#
+#  This will disable authentication on all vpns currently present on the router.
+# 
+#
+
+<%args>
+router => 192.168.160.1   # IP of the router
+</%args>
+
+
+enable
+configure terminal
+no paging
+
+# Verify version
+show version
+% my ($major, $minor, $branch) = ($rrsLastResult =~ /CLI\s+([0-9]+)\.([0-9]+)([a-zA-Z]*)\./);
+% if ((($major == 1) && ($minor >= 20)) ||
+%     (($major == 4) && ($minor >= 5)) ||
+%     ($major > 4))
+% {
+      # Show message-vpn should be available in soltr mode...
+      show message-vpn *
+
+%     my @msgVpns;
+%     foreach my $line (split("\n", $rrsLastResult))
+%     {
+%         if ($line =~ /^(.*)(\s+)(Disabled|Up|Down).*$/)
+%         {
+%             push(@msgVpns, $1);
+%         }
+%     }
+
+%    for my $vpn (@msgVpns)
+%    {
+         message-vpn <% $vpn %>
+         authentication user-class client
+         auth-type none
+         end
+         configure terminal
+%    }
+
+      end
+      exit
+% }
+% else
+% {   # Before message vpn scoped authentication.
+      # Nothing to do.
+% }
+

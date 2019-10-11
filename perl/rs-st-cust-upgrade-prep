@@ -1,0 +1,605 @@
+#!/usr/bin/env run-router-script
+#
+# This script implements the three stages of a customer upgrade, as
+# described in the release notes.  It's meant to be run one at a time,
+# with the primary router listed first, and the secondary router
+# listed second.
+#
+<%args>
+$s => ""            # stage to run
+$timeOut = 120
+</%args>
+
+% if ($s == 1) {
+#take backup
+
+show version
+
+<%perl>
+$rrsLastResult =~ /Current load is: soltr_([\d\.]+)/;
+my $versionNumber = $1;
+my ($sec,$min,$hour,$mday,$mon,$year,$wday,$yday,$isdst) = localtime(time);
+#perl indexes the month from 0 so you can use it to pull something out of an array.  But I want the calendar number.
+my $monNum = sprintf '%02u',$mon + 1;
+$mday = sprintf '%02u',$mday;
+my $backupName = "backup_${monNum}${mday}_${versionNumber}";
+$backupName =~ s/{}//g;
+RrsSetTimeout($timeOut);
+</%perl>
+
+<%script type="cli" router-num="0"/>
+enable
+copy current-config <% $backupName %>
+show current-config all > pre-upgrade-current-config.cfg
+show redundancy
+end
+
+<%script type="cli" router-num="1"/>
+enable
+copy current-config <% $backupName %>
+show current-config all > pre-upgrade-current-config.cfg
+show redundancy
+end
+
+#Customer procedure begins here
+<%script type="cli" router-num="0"/>
+configure
+routing
+shutdown
+end
+
+<%script type="cli" router-num="1"/>
+configure
+routing
+shutdown
+end
+
+<%script type="cli" router-num="0"/>
+configure
+service msg-backbone
+shutdown
+end
+
+<%script type="cli" router-num="1"/>
+configure
+service msg-backbone
+shutdown
+end
+
+<%script type="cli" router-num="0"/>
+configure
+redundancy 
+no auto-revert
+end
+
+<%script type="cli" router-num="1"/>
+configure
+redundancy 
+no auto-revert
+end
+
+# Wait for clients to disconnect
+% my $ts = 1;
+% while ($ts) {
+<%script type="cli" router-num="0"/>
+show message-spool detail
+
+<%perl>
+$rrsLastResult =~ /\s+Transacted Sessions:\s+(\d+)\s+(\d+)/m;
+$ts = $1;
+print "Primary transacted sessions: $ts\n";
+sleep 5 if ($ts);
+}
+</%perl>
+
+# Wait for redundancy status to be correct
+% my $cont = 1;
+% while ($cont) {
+<%script type="cli" router-num="0"/>
+show redundancy
+
+<%perl>
+my %status1 = ();
+my %status2 = ();
+if ($rrsLastResult =~ /Redundancy Mode\s+:\s+(.*)/m) {
+    if ($1 eq "Active/Standby") {
+        %status1 = ("Configuration Status", "Enabled",
+                    "Redundancy Status", "Up",
+                    "Auto Revert", "No",
+                    "Redundancy Mode", "Active/Standby",
+                    "ADB Link To Mate", "Up",
+                    "ADB Hello To Mate", "Up");
+
+        %status2 = ("Activity Status", "Local Active,Shutdown",
+                    "Routing Interface Status", "Up,",
+                    "VRRP Status", "Master,",
+                    "VRRP Priority", "250,",
+                    "Message Spool Status", "AD-Active,",
+                    "Priority Reported By Mate", "Standby,");
+    } else {
+        %status1 = ("Configuration Status", "Enabled",
+                    "Redundancy Status", "Up",
+                    "Auto Revert", "No",
+                    "Redundancy Mode", "Active/Active",
+                    "ADB Link To Mate", "Up",
+                    "ADB Hello To Mate", "Up");
+
+        %status2 = ("Activity Status", "Local Active,Mate Active",
+                    "Routing Interface Status", "Up,Up",
+                    "VRRP Status", "Master,Backup",
+                    "VRRP Priority", "250,100",
+                    "Message Spool Status", "AD-Active,AD-Disabled",
+                    "Priority Reported By Mate", "Standby,Active");
+    }
+}
+if (getStatusMismatches($rrsLastResult, \%status1, \%status2) == 0) {
+    $cont = 0;
+}
+sleep 5 if ($cont);
+}
+</%perl>
+
+<%script type="cli" router-num="0"/>
+configure
+hardware message-spool
+shutdown
+y
+end
+
+<%script type="cli" router-num="1"/>
+configure
+hardware message-spool
+shutdown
+y
+end
+
+<%script type="cli" router-num="0"/>
+configure
+redundancy
+release-activity
+
+# Wait for redundancy status to be correct
+% $cont = 1;
+% while ($cont) {
+<%script type="cli" router-num="0"/>
+show redundancy
+
+<%perl>
+my %status1 = ();
+my %status2 = ();
+if ($rrsLastResult =~ /Redundancy Mode\s+:\s+(.*)/m) {
+    if ($1 eq "Active/Standby") {
+        %status1 = ("Configuration Status", "Enabled-Released",
+                    "Redundancy Status", "Down",
+                    "Auto Revert", "No",
+                    "Redundancy Mode", "Active/Standby",
+                    "ADB Link To Mate", "Up",
+                    "ADB Hello To Mate", "Down");
+
+        %status2 = ("Activity Status", "Mate Active,Shutdown",
+                    "Routing Interface Status", "Up,",
+                    "VRRP Status", "Backup,",
+                    "VRRP Priority", "0,",
+                    "Message Spool Status", "AD-Disabled,",
+                    "Priority Reported By Mate", "Active,");
+    } else {
+        %status1 = ("Configuration Status", "Enabled-Released",
+                    "Redundancy Status", "Down",
+                    "Auto Revert", "No",
+                    "Redundancy Mode", "Active/Active",
+                    "ADB Link To Mate", "Up",
+                    "ADB Hello To Mate", "Down");
+
+        %status2 = ("Activity Status", "Mate Active,Mate Active",
+                    "Routing Interface Status", "Up,Up",
+                    "VRRP Status", "Backup,Backup",
+                    "VRRP Priority", "0,0",
+                    "Message Spool Status", "AD-Disabled,AD-Disabled",
+                    "Priority Reported By Mate", "Active,Active");
+    }
+}
+if (getStatusMismatches($rrsLastResult, \%status1, \%status2) == 0) {
+    $cont = 0;
+}
+sleep 5 if ($cont);
+}
+</%perl>
+
+% print "READY TO UPGRADE PRIMARY\n";
+
+% } elsif ($s == 2) {
+
+<%script type="cli" router-num="0"/>
+enable
+show version
+configure
+redundancy
+no release-activity
+end
+
+<%script type="cli" router-num="1"/>
+enable
+admin
+redundancy
+revert-activity
+end
+
+<%script type="cli" router-num="1"/>
+configure
+redundancy
+release-activity
+
+# Wait for redundancy status to be correct
+% my $cont = 1;
+% while ($cont) {
+<%script type="cli" router-num="0"/>
+show redundancy
+
+<%perl>
+my %status1 = ();
+my %status2 = ();
+if ($rrsLastResult =~ /Redundancy Mode\s+:\s+(.*)/m) {
+    if ($1 eq "Active/Standby") {
+        %status1 = ("Configuration Status", "Enabled",
+                    "Redundancy Status", "Up",
+                    "Auto Revert", "No",
+                    "Redundancy Mode", "Active/Standby",
+                    "ADB Link To Mate", "Up",
+                    "ADB Hello To Mate", "Down");
+
+        %status2 = ("Activity Status", "Subscriptions pending,Shutdown",
+                    "Routing Interface Status", "Up,",
+                    "VRRP Status", "Master,",
+                    "VRRP Priority", "250,",
+                    "Message Spool Status", "AD-Disabled,",
+                    "Priority Reported By Mate", "None,");
+    } else {
+        %status1 = ("Configuration Status", "Enabled",
+                    "Redundancy Status", "Up",
+                    "Auto Revert", "No",
+                    "Redundancy Mode", "Active/Active",
+                    "ADB Link To Mate", "Up",
+                    "ADB Hello To Mate", "Down");
+
+        %status2 = ("Activity Status", "Subscriptions pending,Subscriptions pending",
+                    "Routing Interface Status", "Up,Up",
+                    "VRRP Status", "Master,Master",
+                    "VRRP Priority", "250,250",
+                    "Message Spool Status", "AD-Disabled,AD-Disabled",
+                    "Priority Reported By Mate", "None,None");
+    }
+}
+if (getStatusMismatches($rrsLastResult, \%status1, \%status2) == 0) {
+    $cont = 0;
+}
+sleep 5 if ($cont);
+}
+</%perl>
+
+% print "READY TO UPGRADE BACKUP\n";
+
+% } elsif ($s == 3) {
+
+<%script type="cli" router-num="1"/>
+enable
+show version
+configure
+redundancy
+no release-activity
+end
+
+<%script type="cli" router-num="0"/>
+enable
+admin
+redundancy
+revert-activity
+end
+
+# Wait for redundancy status to be correct
+% my $cont = 1;
+% while ($cont) {
+<%script type="cli" router-num="0"/>
+show redundancy
+
+<%perl>
+my %status1 = ();
+my %status2 = ();
+if ($rrsLastResult =~ /Redundancy Mode\s+:\s+(.*)/m) {
+    if ($1 eq "Active/Standby") {
+        %status1 = ("Configuration Status", "Enabled",
+                    "Redundancy Status", "Up",
+                    "Auto Revert", "No",
+                    "Redundancy Mode", "Active/Standby",
+                    "ADB Link To Mate", "Up",
+                    "ADB Hello To Mate", "Down");
+
+        %status2 = ("Activity Status", "Subscriptions pending,Shutdown",
+                    "Routing Interface Status", "Up,",
+                    "VRRP Status", "Master,",
+                    "VRRP Priority", "250,",
+                    "Message Spool Status", "AD-Disabled,",
+                    "Priority Reported By Mate", "None,");
+    } else {
+        %status1 = ("Configuration Status", "Enabled",
+                    "Redundancy Status", "Up",
+                    "Auto Revert", "No",
+                    "Redundancy Mode", "Active/Active",
+                    "ADB Link To Mate", "Up",
+                    "ADB Hello To Mate", "Down");
+
+        %status2 = ("Activity Status", "Subscriptions pending,Mate Active",
+                    "Routing Interface Status", "Up,Up",
+                    "VRRP Status", "Master,Backup",
+                    "VRRP Priority", "250,100",
+                    "Message Spool Status", "AD-Disabled,AD-Disabled",
+                    "Priority Reported By Mate", "None,Active");
+    }
+}
+if (getStatusMismatches($rrsLastResult, \%status1, \%status2) == 0) {
+    $cont = 0;
+}
+sleep 5 if ($cont);
+}
+</%perl>
+
+<%script type="cli" router-num="0"/>
+configure
+hardware message-spool
+no shutdown primary
+end
+
+<%script type="cli" router-num="1"/>
+configure
+hardware message-spool
+no shutdown backup
+end
+
+<%script type="cli" router-num="0"/>
+configure
+service msg-backbone
+no shutdown
+end
+
+<%script type="cli" router-num="1"/>
+configure
+service msg-backbone
+no shutdown
+end
+
+<%script type="cli" router-num="0"/>
+configure
+routing
+no shutdown
+end
+
+<%script type="cli" router-num="1"/>
+configure
+routing
+no shutdown
+end
+
+<%script type="cli" router-num="0"/>
+configure
+redundancy
+auto-revert
+end
+
+<%script type="cli" router-num="1"/>
+configure
+redundancy
+auto-revert
+end
+
+<%script type="cli" router-num="0"/>
+configure
+ssl server-certificate mycert.pem
+end
+
+<%script type="cli" router-num="1"/>
+configure
+ssl server-certificate mycert.pem
+end
+
+show version
+
+<%perl>
+$rrsLastResult =~ /Current load is: soltr_([\d\.]+)/;
+my $versionNumber = $1;
+my ($sec,$min,$hour,$mday,$mon,$year,$wday,$yday,$isdst) = localtime(time);
+#perl indexes the month from 0 so you can use it to pull something out of an array.  But I want the calendar number.
+my $monNum = sprintf '%02u',$mon + 1;
+$mday = sprintf '%02u',$mday;
+my $backupName = "backup_${monNum}${mday}_${versionNumber}";
+$backupName =~ s/{}//g;
+</%perl>
+
+<%script type="cli" router-num="0"/>
+copy current-config <% $backupName %>
+show current-config all > post-upgrade-current-config.cfg
+end
+
+# Wait for redundancy status to be correct
+% $cont = 1;
+% while ($cont) {
+show redundancy
+
+<%perl>
+my %status1 = ();
+my %status2 = ();
+if ($rrsLastResult =~ /Redundancy Mode\s+:\s+(.*)/m) {
+    if ($1 eq "Active/Standby") {
+        %status1 = ("Configuration Status", "Enabled",
+                    "Redundancy Status", "Up",
+                    "Auto Revert", "Yes",
+                    "Redundancy Mode", "Active/Standby",
+                    "ADB Link To Mate", "Up",
+                    "ADB Hello To Mate", "Up");
+
+        %status2 = ("Activity Status", "Local Active,Shutdown",
+                    "Routing Interface Status", "Up,",
+                    "VRRP Status", "Master,",
+                    "VRRP Priority", "250,",
+                    "Message Spool Status", "AD-Active,",
+                    "Priority Reported By Mate", "Standby,");
+    } else {
+        %status1 = ("Configuration Status", "Enabled",
+                    "Redundancy Status", "Up",
+                    "Auto Revert", "Yes",
+                    "Redundancy Mode", "Active/Active",
+                    "ADB Link To Mate", "Up",
+                    "ADB Hello To Mate", "Up");
+
+        %status2 = ("Activity Status", "Local Active,Mate Active",
+                    "Routing Interface Status", "Up,Up",
+                    "VRRP Status", "Master,Backup",
+                    "VRRP Priority", "250,100",
+                    "Message Spool Status", "AD-Active,AD-Disabled",
+                    "Priority Reported By Mate", "Standby,Active");
+    }
+}
+if (getStatusMismatches($rrsLastResult, \%status1, \%status2) == 0) {
+    $cont = 0;
+}
+sleep 5 if ($cont);
+}
+</%perl>
+
+<%script type="cli" router-num="1"/>
+copy current-config <% $backupName %>
+show current-config all > post-upgrade-current-config.cfg
+end
+
+# Wait for redundancy status to be correct
+% $cont = 1;
+% while ($cont) {
+show redundancy
+
+<%perl>
+my %status1 = ();
+my %status2 = ();
+if ($rrsLastResult =~ /Redundancy Mode\s+:\s+(.*)/m) {
+    if ($1 eq "Active/Standby") {
+        %status1 = ("Configuration Status", "Enabled",
+                    "Redundancy Status", "Up",
+                    "Auto Revert", "Yes",
+                    "Redundancy Mode", "Active/Standby",
+                    "ADB Link To Mate", "Up",
+                    "ADB Hello To Mate", "Up");
+
+        %status2 = ("Activity Status", "Shutdown,Mate Active",
+                       "Routing Interface Status", ",Up",
+                       "VRRP Status", ",Backup",
+                       "VRRP Priority", ",100",
+                       "Message Spool Status", ",AD-Standby",
+                       "Priority Reported By Mate", ",Active");
+    } else {
+        %status1 = ("Configuration Status", "Enabled",
+                    "Redundancy Status", "Up",
+                    "Auto Revert", "Yes",
+                    "Redundancy Mode", "Active/Active",
+                    "ADB Link To Mate", "Up",
+                    "ADB Hello To Mate", "Up");
+
+        %status2 = ("Activity Status", "Local Active,Mate Active",
+                    "Routing Interface Status", "Up,Up",
+                    "VRRP Status", "Master,Backup",
+                    "VRRP Priority", "250,100",
+                    "Message Spool Status", "AD-Disabled,AD-Standby",
+                    "Priority Reported By Mate", "Standby,Active");
+    }
+}
+if (getStatusMismatches($rrsLastResult, \%status1, \%status2) == 0) {
+    $cont = 0;
+}
+sleep 5 if ($cont);
+}
+</%perl>
+
+% print "Primary vpn config diff:\n";
+<%script type="linux" router-num="0"/>
+diff /usr/sw/jail/pre-upgrade-current-config.cfg /usr/sw/jail/post-upgrade-current-config.cfg
+% print "****CONFIG CHURN PRIMARY*****\n" if ($rrsLastResult);
+
+% print "Secondary vpn config diff:\n";
+<%script type="linux" router-num="1"/>
+diff /usr/sw/jail/pre-upgrade-current-config.cfg /usr/sw/jail/post-upgrade-current-config.cfg
+% print "****CONFIG CHURN BACKUP*****\n" if ($rrsLastResult);
+
+% } else {
+% print "Pick a stage, 1, 2, or 3\n";
+% }
+
+<%perl>
+sub getStatusMismatches {
+    my ($result, $hash1, $hash2) = @_;
+
+    my $mismatches = 0;
+    my @resultLines = split("\n", $result);
+
+    while ((my $key, my $value) = each(%$hash1)) {
+        my $found = 0;
+        foreach my $line (@resultLines) {
+            if ($line =~ /^$key\s+:\s+([A-Za-z0-9\-\/\: ]+)$/m) {
+                if ($value ne $1) {
+                    $mismatches++;
+                    print "\"$key\" is not expected \"$value\" (got \"$1\")\n";
+                }
+                $found++;
+                last;
+            } elsif ($line =~ /^$key\s+:\s+$/m) {
+                if ($value ne "") {
+                    $mismatches++;
+                    print "\"$key\" is not expected \"$value\" (got \"\")\n";
+                }
+                $found++;
+                last;
+            } elsif ($line =~ /^\s+-+\s+-+\s*$/m) {
+                last;
+            }
+        }
+        if ($found == 0) {
+            $mismatches++;
+            print "\"$key\" is not found (expected \"$value\")\n";
+        }
+    }
+
+    while ((my $key, my $value) = each(%$hash2)) {
+        my @values = split(",", $value);
+        $values[0] = "" unless defined($values[0]);
+        $values[1] = "" unless defined($values[1]);
+        my $start = 0;
+        my $found = 0;
+        foreach my $line (@resultLines) {
+            if ($start == 1) {
+                my $part1 = substr($line, 0, 31);
+                $part1 =~ s/\s+$//;
+                my $part2 = substr($line, 31, 24);
+                $part2 =~ s/\s+$//;
+                my $part3 = substr($line, 55);
+                $part3 =~ s/\s+$//;
+                if ($part1 eq $key) {
+                    if ($values[0] ne $part2) {
+                        $mismatches++;
+                        print "\"$key\" for Primary Virtual Router is not expected \"$values[0]\" (got \"$part2\")\n";
+                    }
+                    if ($values[1] ne $part3) {
+                        $mismatches++;
+                        print "\"$key\" for Backup Virtual Router is not expected \"$values[1]\" (got \"$part3\")\n";
+                    }
+                    $found++;
+                    last;
+                }
+            }
+            if ($line =~ /^\s+-+\s+-+\s*$/m) {
+                $start = 1;
+            }
+        }
+        if ($found == 0) {
+            $mismatches++;
+            print "\"$key\" is not found (expected \"$value\")\n";
+        }
+    }
+
+    return $mismatches;
+}
+</%perl>

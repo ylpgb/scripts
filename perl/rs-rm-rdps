@@ -1,0 +1,71 @@
+#!/usr/bin/env run-router-script
+#
+#  This script will remove the specified number of rest delivery points (RDP)
+#  to the router.
+#
+<%args>
+$rn => "rdp"         # Prefix string for the RDP 
+$rc => 0             # Number of RDPs to add 
+$remAll => 0         #
+$msgVpn => "default" # Message Vpn for the RDP
+$sc => 1             # Starting value for loop counter
+$zf => 1             # Want zero fill names.
+</%args>
+
+<%perl>
+
+if (($remAll) == 0 && ($rc == 0)) {
+    print "ERROR: Must specify a count to remove (rc) or the remove all flag (remAll)\n";
+    exit;
+}
+
+</%perl>
+
+show message-vpn <% $msgVpn %> rest rest-delivery-point *
+<%perl>
+my ($lines) = ($rrsLastResult =~ /------\s*(\n(.|\n)*)$/);
+
+if (!defined $lines) {
+    return;
+}
+
+
+my @rdpList = ($lines =~ /\n([A-Za-z0-9_\/#-.]+)\s/g);
+
+</%perl>
+
+
+enable
+con t
+message-vpn <% $msgVpn %>
+rest
+
+% if ($remAll == 1) {
+
+% foreach my $rdp (@rdpList) {
+
+rest-delivery-point <% $rdp %>
+shut
+exit
+no rest-delivery-point  <% $rdp %>
+
+% } 
+
+
+% } else {
+
+% for my $i ($sc .. ($sc +$rc - 1)) {
+
+# Remove the RDP
+rest-delivery-point <% $rn . (($zf) ? sprintf("%05d", $i) : sprintf("%d", $i)) %>  
+shut
+exit
+no rest-delivery-point <% $rn . (($zf) ? sprintf("%05d", $i) : sprintf("%d", $i)) %>  
+
+
+% }
+
+% } 
+
+end
+exit

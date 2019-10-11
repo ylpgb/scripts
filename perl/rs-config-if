@@ -1,0 +1,149 @@
+#!/usr/bin/env run-router-script
+#
+#  This will set up the lag 1 interface to the recommended value and
+#  add the default route.
+#
+<%args>
+router => 192.168.160.1   # IP of the router
+mode   => lacp            # LAG mode - lacp or active-backup
+</%args>
+
+% if ($rrsRouterName =~ /simulator/) { return; }
+
+% if ($mode ne "lacp" && $mode ne "active-backup") {
+%    Fatal("Bad mode specified: $mode.  Must be lacp or active-backup");
+% }
+
+home
+enable
+configure
+
+# Check for VM router
+show hardware
+
+% my $isVm = 0;
+% if ($rrsLastResult =~ /Platform:\s*(Simulation)|(Solace Virtual Message Router)|(VMR)|(Solace PubSub\+ (Enterprise|Standard))/) { $isVm = 1; }
+
+%   if (!$isVm) {
+      show interface
+
+%     # Determine the slot for our NAB.
+%     my $cart;
+%     my $slot;
+%     my $lastPort;
+%     my @cartSlotPort = ($rrsLastResult =~ m(Interface:\s*(\d+)/(\d+)/(\d+))g);
+%     if (@cartSlotPort >= 3)
+%     {
+%         $cart = $cartSlotPort[-3];
+%         $slot = $cartSlotPort[-2];
+%         $lastPort = $cartSlotPort[-1];
+%     }
+
+%     if (defined($cart) && defined($slot) && defined($lastPort))
+%     {
+
+          create interface <% $cart %>/<% $slot %>/lag1 <% $mode %>
+%         if (($rrsLastResult !~ /already exists/) 
+%             && ($rrsLastResult =~ /COMMAND/i))
+%         {
+              create interface <% $cart %>/<% $slot %>/lag1
+%         }
+%         if ($rrsLastResult =~ /already exists/) {
+              interface <% $cart %>/<% $slot %>/lag1
+%         }
+%         for my $port (1 .. $lastPort)
+%         {
+              member <% $cart %>/<% $slot %>/<% $port %>
+%         }
+
+          end
+          configure terminal
+          interface <% $cart %>/<% $slot %>/lag1
+          no shutdown
+          end
+          configure terminal
+          ip vrf msg-backbone
+          create interface <% $cart %>/<% $slot %>/lag1:1 primary
+%         if ($rrsLastResult =~ /already exists/) {
+              interface <% $cart %>/<% $slot %>/lag1:1
+%         }
+          ip-address 192.168.<% ($rrsRouterNetNum - 128) * 4 + 160 %>.<% $rrsRouterNum+100 %>/19
+          no shutdown
+          end
+          configure terminal
+          ip vrf msg-backbone
+          create interface <% $cart %>/<% $slot %>/lag1:3 static
+%         if ($rrsLastResult =~ /already exists/) {
+              interface <% $cart %>/<% $slot %>/lag1:3
+%         }
+          ip-address 192.168.<% ($rrsRouterNetNum - 128) * 4 + 160  %>.<% $rrsRouterNum %>/19
+          no shutdown
+          end
+          configure terminal
+          ip vrf msg-backbone
+          route default <% $router %> 
+          end
+          configure terminal
+
+          # Depending on the stream and/or version, you need to execute either
+          # 'routing interface <intf>' or 'router routing-interface <intf>'.
+          # If we just try them both, one of the two should work.
+          #
+          service smf shutdown
+          routing interface <% $cart %>/<% $slot %>/lag1
+          router routing-interface <% $cart %>/<% $slot %>/lag1
+          no service smf shutdown
+%     }
+%     else
+%     {
+%         die "Unable to parse cartridge and slot";
+%     }
+%   }
+%   else {
+      show interface
+
+%     # Determine the slot for our NAB.
+%     my $cart = 1;
+%     my $slot = 1;
+
+      create interface <% $cart %>/<% $slot %>/lag1 <% $mode %>
+%     if (($rrsLastResult !~ /already exists/) 
+%         && ($rrsLastResult =~ /COMMAND/i))
+%     {
+          create interface <% $cart %>/<% $slot %>/lag1
+%     }
+%     if ($rrsLastResult =~ /already exists/) {
+          interface <% $cart %>/<% $slot %>/lag1
+%     }
+
+      end
+      configure terminal
+      interface <% $cart %>/<% $slot %>/lag1
+      no shutdown
+      end
+      configure terminal
+      ip vrf msg-backbone
+      create interface <% $cart %>/<% $slot %>/lag1:3 static
+%     if ($rrsLastResult =~ /already exists/) {
+          interface <% $cart %>/<% $slot %>/lag1:3
+%     }
+      ip-address 192.168.<% $rrsRouterNetNum %>.<% $rrsRouterNum %>/19
+      no shutdown
+      end
+      configure terminal
+      ip vrf msg-backbone
+      route default <% $router %> 
+      end
+      configure terminal
+
+      # Depending on the stream and/or version, you need to execute either
+      # 'routing interface <intf>' or 'router routing-interface <intf>'.
+      # If we just try them both, one of the two should work.
+      #
+      service smf shutdown
+      routing interface <% $cart %>/<% $slot %>/lag1
+      router routing-interface <% $cart %>/<% $slot %>/lag1
+      no service smf shutdown
+%   }
+    end
+    exit

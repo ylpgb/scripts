@@ -1,0 +1,37 @@
+#!/usr/bin/env run-router-script
+#
+#  This will remove all publishers on the box
+#
+
+<%args>
+$msgVpn  => default;    # messageVpn
+</%args>
+
+show topic-endpoint * message-vpn <% $msgVpn %> durable
+
+<%perl>
+
+my ($te) = ($rrsLastResult =~ /------\s*(\n(.|\n)*)$/);
+
+if (!defined $te) {
+    return;
+}
+
+my @names = ($te =~ /\n([A-Za-z0-9_\/]+)\s/g);
+
+</%perl>
+
+enable
+con t
+message-spool message-vpn <% $msgVpn %>
+
+
+% foreach my $q (@names) {
+topic-endpoint <% $q %>
+shut
+exit
+no topic-endpoint <% $q %>
+% }
+
+end
+exit

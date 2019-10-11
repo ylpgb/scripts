@@ -1,0 +1,78 @@
+#!/usr/bin/env run-router-script
+<%args>
+  $numdests => 8  # Number of destinations to have in the looped back data
+  $firstDest => 0 # The first destId to use 
+</%args>
+
+<%perl>
+
+my $slot = getTrmSlot();
+
+</%perl>
+
+
+%# Start the TopicEgressDispatcher
+<%script type="soldebug">
+:lconn 1
+topicEgressDispatcher_start
+
+
+%# Setup the TMR
+<%script type="linux">
+
+cd /usr/solace/loads/currentload/firmware
+
+%# Loopback mode
+%# EMR_CTRL	
+./solapp -s <% $slot %> -w 1 0x6000 5
+%# MPE_CTRL	
+./solapp -s <% $slot %> -w 1 0x3000 3
+
+
+%# Write some result data
+./solapp -s <% $slot %> -w 1 0x6030 <% sprintf("%x",$numdests) %>
+./solapp -s <% $slot %> -w 1 0x602c 0
+
+./solapp -s <% $slot %> -w 1 0x6030 <% sprintf("%x",$firstDest) %>
+./solapp -s <% $slot %> -w 1 0x602c 1
+
+% my $count = $firstDest + 1;
+% my $addr = 2;
+% while ($count < $numdests+$firstDest) {
+%   my $value = sprintf("%04x%04x", $count, $count+1);
+%   $count += 2;
+./solapp -s <% $slot %> -w 1 0x6030 <% $value %>
+./solapp -s <% $slot %> -w 1 0x602c <% sprintf("%x",$addr) %>
+%   $addr++;
+% }
+
+
+%# EMR_API_LPBK_DESTSET_LENGTH
+./solapp -s <% $slot %> -w 1 0x6034 <% sprintf("%x", int(($numdests+2)/4)) %>
+
+
+<%perl>
+ 
+   sub getTrmSlot {
+
+    RrsShowOutput(0);
+</%perl>
+<%script type="linux">
+cat /proc/solace/3200
+<%perl>
+    RrsShowOutput(1);
+
+    my ($slot) = ($rrsLastResult =~ /(\d+)  3210/);
+    
+    print "Found slot: $slot\n";
+    if (!defined $slot) {
+      print "ERROR:  Couldn't find TRM slot number\n";
+      exit;
+    }
+
+    return $slot;
+
+  }
+
+
+</%perl>

@@ -1,0 +1,74 @@
+#!/usr/bin/env run-router-script
+#
+#  This script will do everything necessary to connect
+#  GDB to a running (or newly crashed) 3206
+#
+<%args>
+</%args>
+
+<%init>
+  # Get rid of need for passwords
+
+  if ($ENV{CVSWD} !~ /vrs32/) {
+    $ENV{CVSWD} .= "/vrs32";
+  }
+
+  my $gdb = "/usr/local/cvmx-mips64/bin/mipsisa64-octeon-elf-gdb";
+  $gdb = "$ENV{CVSWD}/luna/third-party/CN3XXX-SDK/tools/bin/mipsisa64-octeon-elf-gdb" unless (-x $gdb);
+  Fatal("Can't find gdb executable: $gdb") unless (-x $gdb);
+
+</%init>
+
+
+%# First make sure io-terminal is running properly
+<%script type="linux">
+
+ps -ef |grep io-terminal|grep -v grep
+
+<%perl>
+  if ($rrsLastResult =~ /io-terminal/) {
+    if ($rrsLastResult !~ /accept/) {
+      print "Found io terminal without accept\n";
+      # Kill the existing io-terminal and start a new one
+</%perl>
+pkill io-terminal
+/usr/solace/loads/currentload/scripts/io-terminal --accept-all --echo 2>&1 > /usr/solace/jail/diags/io-terminal.log < /dev/null &
+<%perl>
+    }
+  }
+  else {
+    # Start the io-terminal
+</%perl>
+/usr/solace/loads/currentload/scripts/io-terminal --accept-all --echo 2>&1 > /usr/solace/jail/diags/io-terminal.log < /dev/null &
+<%perl>
+  } 
+
+  chdir "/tmp";  
+  # Next copy the dataplane executable back to your box
+  my $execFile = "./dataplane.$rrsRouterName.$$";
+  `addkeyto $rrsRouterName`;
+  print "Copying 3206 firmware file locally...\n";
+  `scp root\@$rrsRouterName:cl/firmware/3206/dataplane $execFile`;
+
+  # Create a file with GDB commands in it
+  my $gdbCmdFile = "./gdb-commands.$$";
+  open (OUT, "> $gdbCmdFile") || Fatal ("Couldn't open $gdbCmdFile for writing: $!");
+  print OUT "target octeon tcp:$rrsRouterName:21593\n";
+  print OUT "load\n";
+  print OUT "define fix_pc\n";
+  print OUT "  if cvmx_pc_at_crash != 0\n";
+  print OUT "    print \"Fixing the PC after the crash\"\n";
+  print OUT "    set \$pc=cvmx_pc_at_crash\n";
+  print OUT "  end\n";
+  print OUT "end\n";
+  print OUT "fix_pc\n";
+  print OUT "update\n";
+  # print OUT "bt\n";
+  close(OUT);
+
+  # Start GDB
+  print "Execfile:  $execFile\n";
+  system "$gdb -x $gdbCmdFile $execFile; rm -f $execFile; rm -f $gdbCmdFile";
+
+</%perl>
+

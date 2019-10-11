@@ -1,0 +1,57 @@
+#!/usr/bin/env run-router-script
+#
+#  This will remove all client-usernames on the router
+#
+
+<%args>
+$un => ""            # Prefix string for the client-usernames
+$vn => ""            # Prefix string for the message-vpn
+</%args>
+
+show client-username <% $un %>* 
+
+<%perl>
+
+my ($usernames) = ($rrsLastResult =~ /-------\s*(\n(.|\n)*)$/);
+
+if  (!defined $usernames) {
+    return;
+}
+
+my @names = ();
+if ($usernames) {
+  if ($un && $vn) {
+    @names = ($usernames =~ /\n([A-Za-z0-9_]+)\s/g);
+  } else {
+    @names = ($usernames =~ /\n.+/g);
+  }
+}
+
+if  (! @names) {
+    return;
+}
+
+
+</%perl>
+
+enable
+con t
+
+% foreach my $name (@names) {
+%   if (($name !~ m/^\n(#|\s)/) && ($name !~ m/^default$/)) {
+%     my ($vpn) = "";
+%     if ($un && $vn) {
+%       my ($num) = $name =~ m/^$un(.*)$/;
+%       ($vpn) = $vn . $num;
+%     } else {
+%       ($name, $vpn) = $name =~ m/\n([A-Za-z0-9_]+)\s+([A-Za-z0-9_]+)\s/;
+%     }
+      client-username <% $name %>  message-vpn <% $vpn %>
+      shut
+      exit
+      no client-username <% $name %>  message-vpn <% $vpn %>
+%   }
+% }
+
+end
+exit

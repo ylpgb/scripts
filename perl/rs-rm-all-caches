@@ -1,0 +1,72 @@
+#!/usr/bin/env run-router-script
+#
+#  Examine the router and remove all the configured cache information
+#
+<%args>
+</%args>
+
+%# RrsSaveShowOutput();
+%# RrsShowOutput(0);
+
+enable
+config t
+
+# Get the distributed caches
+show distributed-cache *
+% my @dcs = ($rrsLastResult =~ /\n([\w_\-\.\d\/]+\s+[\w_\-\d\/]+)\s.*(?:Yes|No)/g);
+
+# Get all the cache instances
+show cache-instance * detail
+
+<%perl>
+my %instance;
+my %lookup;
+my ($currInst, $currDc, $currVpn, $currCc);
+foreach my $line (split(/\n/, $rrsLastResult)) {
+  if ($line =~ /Cache Instance\s*:\s*([\w\d_\.\-]+)/) {
+    $currInst = $1;
+  }
+  elsif ($line =~ /Distributed Cache\s*:\s*([\w\d_\.\-]+)/) {
+    $currDc = $1;
+  }
+  elsif ($line =~ /Message VPN\s*:\s*([\w\d_\.\-]+)/) {
+    $currVpn = $1;
+  }
+  elsif ($line =~ /Cache Cluster\s*:\s*([\w\d_\.\-]+)/) {
+    $currCc = $1;
+  }
+  elsif ($line =~ /Last Heartbeat/) {
+    if (defined $currInst) {
+      $instance{$currInst} = {Dc => $currDc, Vpn => $currVpn, Cc => $currCc};
+      undef $currInst;
+    }
+  }
+
+}
+
+</%perl>
+
+%# First shutdown all the cache instances
+% foreach my $inst (keys(%instance)) {
+  distributed-cache <% $instance{$inst}{Dc} %> message-vpn <% $instance{$inst}{Vpn} %> 
+    cache-cluster <% $instance{$inst}{Cc} %>
+      cache-instance <% $inst %>
+        shutdown
+      exit
+    exit
+  exit
+% }
+
+%# Now, shutdown and delete the distributed caches
+% foreach my $dc (@dcs) {
+%   my ($name, $vpn) = ($dc =~ /([^\s]+)\s+([^\s]+)/);
+  distributed-cache <% $name %> message-vpn <% $vpn %>
+    shutdown
+  exit
+  no distributed-cache <% $name %> message-vpn <% $vpn %>
+% }
+
+end
+exit
+
+%# RrsRestoreShowOutput();

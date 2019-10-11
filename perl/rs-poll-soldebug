@@ -1,0 +1,34 @@
+#!/usr/bin/env run-router-script
+<%args>
+$interval => 1             # Time between updates
+$cmd => 'netstat_detailed' # Soldebug command to run
+$conn => 0                 # Soldebug thread to connect to
+$lconn => 0                # Soldebug linecard thread to connect to
+</%args>
+
+% RrsShowOutput(0);
+
+<%script type="soldebug"/>
+
+% if ($conn == 0 && $lconn == 0) { Fatal("You must set either conn or lconn: e.g.  rs-poll-pending-count lab68 lconn=1 cmd=netstat"); }
+% if ($conn) {
+:conn <% $conn %>
+% } else {
+:lconn <% $lconn %>
+% }
+
+% while (1) {
+<% $cmd %>
+% print "\n" . $rrsLastResult;
+%   ReadMode 4;
+%   my $char = ReadKey($interval);  
+%   ReadMode 0;
+%   if (defined $char) {
+%      if (($char eq "q") || ($char eq "")) {
+%        ReadMode 0; last;
+%      }
+%   }
+% }
+
+:exit
+
