@@ -24,6 +24,8 @@ client = mqtt.Client()
 client.on_connect = on_connect
 client.on_message = on_message
 
+client.username_pw_set(username="admin", password="solace1")
+
 client.connect(args.ip, args.p, 60)
 
 print("Starting loop...")
