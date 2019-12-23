@@ -7,6 +7,8 @@ import argparse
 import signal
 import os
 import re
+import pickle
+from enum import Enum
 
 usage = 'Parse stats from broker event log'
 parser = argparse.ArgumentParser(description=usage)
@@ -16,66 +18,79 @@ parser.add_argument('logfile', nargs='?', type=argparse.FileType('r'), default=s
 args = parser.parse_args()
 
 #--------------------------------------------------------
-# EventParse class
+# EVENT_TYPE class
 #--------------------------------------------------------
-class EventParser(object):
+class EVENT_TYPE(Enum):
+  CLIENT_CLIENT_CONNECT = 1
+  CLIENT_CLIENT_DISCONNECT = 2
+  
+#--------------------------------------------------------
+# CLIENT_CONNECT_EventParse class
+#--------------------------------------------------------
+class CLIENT_CONNECT_EventParser(object):
   def __init__(self, event):
     self.event = event
-
-    self.controlMsgsReceived = 0
-    self.controlMsgsDelivered = 0
-    self.topicMsgsReceived = 0
-    self.topicMsgsDelivered = 0
-    self.totalMsgsReceived = 0
-    self.totalMsgsDelivered = 0
-    self.controlBytesReceived = 0
-    self.controlBytesDelivered = 0
-    self.topicBytesReceived = 0
-    self.topicBytesDelivered =0
-    self.totalBytesReceived = 0
-    self.totalBytesDelivered = 0
-    self.curMsgRateIngress = 0
-    self.curMsgRateEgress = 0
-    self.avgMsgRateIngress = 0
-    self.avgMsgRateEgress = 0
-    self.deniedDuplicateClients = 0
-    self.discardsNoSubscriptionMatch = 0
-    self.discardsTopicParseError = 0
-    self.discardsParseError = 0
-    self.discardsMsgTooBig = 0
-    self.discardsTransmitCongestion = 0
+    self.stats = {}
+    self.stats['eventType'] = EVENT_TYPE.CLIENT_CLIENT_CONNECT
     
     self.parse()
 
   def parse(self):
+    m = re.search('CLIENT_CLIENT_CONNECT.*: (.+?) Client', self.event)
+    if m:
+      self.stats['clientName'] = m.group(1)
+
+    m = re.search('^(.+?) <', self.event)
+    if m:
+      self.stats['time'] = m.group(1)
+      
+#--------------------------------------------------------
+# CLIENT_DISCONNECT_EventParse class
+#--------------------------------------------------------
+class CLIENT_DISCONNECT_EventParser(object):
+  def __init__(self, event):
+    self.event = event
+    self.stats = {}
+    self.stats['eventType'] = EVENT_TYPE.CLIENT_CLIENT_DISCONNECT
+    
+    self.parse()
+
+  def parse(self):
+    m = re.search('CLIENT_CLIENT_DISCONNECT.*: (.+?) Client', self.event)
+    if m:
+      self.stats['clientName'] = m.group(1)
+
+    m = re.search('^(.+?) <', self.event)
+    if m:
+      self.stats['time'] = m.group(1)
+      
     m = re.search('dp\((.+?)\)', self.event)
     if m:
       stats = m.group(1).split(', ')
 
-      self.controlMsgsReceived = stats[0]
-      self.controlMsgsDelivered = stats[1]
-      self.topicMsgsReceived = stats[2]
-      self.topicMsgsDelivered = stats[3]
-      self.totalMsgsReceived = stats[4]
-      self.totalMsgsDelivered = stats[5]
-      self.controlBytesReceived = stats[6]
-      self.controlBytesDelivered = stats[7]
-      self.topicBytesReceived = stats[8]
-      self.topicBytesDelivered =stats[9]
-      self.totalBytesReceived = stats[10]
-      self.totalBytesDelivered = stats[11]
-      self.curMsgRateIngress = stats[12]
-      self.curMsgRateEgress = stats[13]
-      self.avgMsgRateIngress = stats[14]
-      self.avgMsgRateEgress = stats[15]
-      self.deniedDuplicateClients = stats[16]
-      self.discardsNoSubscriptionMatch = stats[17]
-      self.discardsTopicParseError = stats[18]
-      self.discardsParseError = stats[19]
-      self.discardsMsgTooBig = stats[20]
-      self.discardsTransmitCongestion = stats[21]
-
-
+      self.stats['controlMsgsReceived'] = stats[0]
+      self.stats['controlMsgsDelivered'] = stats[1]
+      self.stats['topicMsgsReceived'] = stats[2]
+      self.stats['topicMsgsDelivered'] = stats[3]
+      self.stats['totalMsgsReceived'] = stats[4]
+      self.stats['totalMsgsDelivered'] = stats[5]
+      self.stats['controlBytesReceived'] = stats[6]
+      self.stats['controlBytesDelivered'] = stats[7]
+      self.stats['topicBytesReceived'] = stats[8]
+      self.stats['topicBytesDelivered'] =stats[9]
+      self.stats['totalBytesReceived'] = stats[10]
+      self.stats['totalBytesDelivered'] = stats[11]
+      self.stats['curMsgRateIngress'] = stats[12]
+      self.stats['curMsgRateEgress'] = stats[13]
+      self.stats['avgMsgRateIngress'] = stats[14]
+      self.stats['avgMsgRateEgress'] = stats[15]
+      self.stats['deniedDuplicateClients'] = stats[16]
+      self.stats['discardsNoSubscriptionMatch'] = stats[17]
+      self.stats['discardsTopicParseError'] = stats[18]
+      self.stats['discardsParseError'] = stats[19]
+      self.stats['discardsMsgTooBig'] = stats[20]
+      self.stats['discardsTransmitCongestion'] = stats[21]
+      
 #--------------------------------------------------------
 # Parse class
 #--------------------------------------------------------
@@ -87,6 +102,7 @@ class Parser(object):
     self.msgThreshould = 20000
     self.bytesThreshould = 300000000
     self.count = 0
+    self.stats = {}
     self.thread.start()
     return
   
@@ -99,15 +115,28 @@ class Parser(object):
 
     while not self.stop_flag:
       event = self.logfile.readline()
-      if (len(event) > 1) : 
-        event_parser = EventParser(event)
-        if ((int(event_parser.totalBytesDelivered) > self.bytesThreshould) & (int(event_parser.totalMsgsDelivered) > self.msgThreshould) & (int(event_parser.totalMsgsDelivered) < 30000)):
-          self.count = self.count + 1
-          print(event)
-          print("totalMsgsDelivered: ", event_parser.totalMsgsDelivered, " totalBytesDelivered: ", event_parser.totalBytesDelivered)
-
+      event_parser = None
+      if (len(event) > 1) :
+        if(event.find('CLIENT_CLIENT_CONNECT') != -1):
+          event_parser = CLIENT_CONNECT_EventParser(event)
+        elif(event.find('CLIENT_CLIENT_DISCONNECT') != -1):
+          event_parser = CLIENT_DISCONNECT_EventParser(event)
+        
+        if event_parser:
+          if event_parser.stats['clientName'] in self.stats.keys():
+            try:
+              self.stats[event_parser.stats['clientName']].append(event_parser.stats)
+            except:
+              print("Unable to append to the list for key " + event_parser.stats['clientName'])
+          else:
+            self.stats[event_parser.stats['clientName']] = [event_parser.stats]
+            
       if (len(event) == 0) : 
         print("Command completed!!! Found event meeting criteria " + str(self.count))
+        print("dict length: ", len(self.stats))
+        #dfile = open('dump.pkl', 'wb')
+        #pickle.dump(self.stats, dfile)
+        #dfile.close()
         os.kill(os.getpid(), signal.SIGUSR1)
         break 
     return
