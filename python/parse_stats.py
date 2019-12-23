@@ -12,7 +12,7 @@ from enum import Enum
 
 usage = 'Parse stats from broker event log'
 parser = argparse.ArgumentParser(description=usage)
-parser.add_argument('logfile', nargs='?', type=argparse.FileType('r'), default=sys.stdin,
+parser.add_argument('logfile', nargs='+', type=argparse.FileType('r'), default=sys.stdin,
                     help='log file')
 
 args = parser.parse_args()
@@ -90,18 +90,23 @@ class CLIENT_DISCONNECT_EventParser(object):
       self.stats['discardsParseError'] = stats[19]
       self.stats['discardsMsgTooBig'] = stats[20]
       self.stats['discardsTransmitCongestion'] = stats[21]
+
+    m = re.search('reason\((.+?)\)', self.event)
+    if m:
+      self.stats['reason'] = m.group(1)
+
       
 #--------------------------------------------------------
 # Parse class
 #--------------------------------------------------------
 class Parser(object):
   def __init__(self, logfile):
-    self.logfile = logfile 
+    self.logfile = logfile
+    print("logfile, ", (logfile))
     self.stop_flag = False
     self.thread = threading.Thread(target = self.run)
     self.msgThreshould = 20000
     self.bytesThreshould = 300000000
-    self.count = 0
     self.stats = {}
     self.thread.start()
     return
@@ -114,36 +119,36 @@ class Parser(object):
     print("If logfile is from stdin, use CTRL+D to exit")
 
     while not self.stop_flag:
-      event = self.logfile.readline()
-      event_parser = None
-      if (len(event) > 1) :
-        if(event.find('CLIENT_CLIENT_CONNECT') != -1):
-          event_parser = CLIENT_CONNECT_EventParser(event)
-        elif(event.find('CLIENT_CLIENT_DISCONNECT') != -1):
-          event_parser = CLIENT_DISCONNECT_EventParser(event)
+      for file in self.logfile :
+        print("Processing file: " + file.name)
+        for event in file :
+          #event = file.readline()
+          event_parser = None
+          if(event.find('CLIENT_CLIENT_CONNECT') != -1):
+            event_parser = CLIENT_CONNECT_EventParser(event)
+          elif(event.find('CLIENT_CLIENT_DISCONNECT') != -1):
+            event_parser = CLIENT_DISCONNECT_EventParser(event)
         
-        if event_parser:
-          if event_parser.stats['clientName'] in self.stats.keys():
-            try:
-              self.stats[event_parser.stats['clientName']].append(event_parser.stats)
-            except:
-              print("Unable to append to the list for key " + event_parser.stats['clientName'])
-          else:
-            self.stats[event_parser.stats['clientName']] = [event_parser.stats]
+          if event_parser:
+            if event_parser.stats['clientName'] in self.stats.keys():
+              try:
+                self.stats[event_parser.stats['clientName']].append(event_parser.stats)
+              except:
+                print("Unable to append to the list for key " + event_parser.stats['clientName'])
+            else:
+              self.stats[event_parser.stats['clientName']] = [event_parser.stats]
             
-      if (len(event) == 0) : 
-        print("Command completed!!! Found event meeting criteria " + str(self.count))
-        print("dict length: ", len(self.stats))
-        #dfile = open('dump.pkl', 'wb')
-        #pickle.dump(self.stats, dfile)
-        #dfile.close()
-        os.kill(os.getpid(), signal.SIGUSR1)
-        break 
-    return
+      print("dict length: ", len(self.stats))
+      dfile = open('dump.pkl', 'wb')
+      pickle.dump(self.stats, dfile)
+      dfile.close()
+      os.kill(os.getpid(), signal.SIGUSR1)
+      break 
+    exit(0)
       
 
 # Create sender instance
-stats_parser = Parser(args.logfile)
+stats_parser = Parser(args.logfile[::-1])
 
 try:
   while 1:
