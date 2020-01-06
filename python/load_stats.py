@@ -9,6 +9,7 @@ import re
 import pickle
 from enum import Enum
 import matplotlib.pyplot as plt
+import json
 
 usage = 'load and manipulate the statistics from the parsed event log'
 parser = argparse.ArgumentParser(description=usage)
@@ -26,6 +27,20 @@ class EVENT_TYPE(Enum):
 
 
 #--------------------------------------------------------
+# EnumEncoder class
+#--------------------------------------------------------
+PUBLIC_ENUMS = {
+    'EVENT_TYPE': EVENT_TYPE,
+    # ...
+}
+class EnumEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if type(obj) in PUBLIC_ENUMS.values():
+            return {"__enum__": str(obj)}
+        return json.JSONEncoder.default(self, obj)
+
+
+#--------------------------------------------------------
 # Parse class
 #--------------------------------------------------------
 class Parser(object):
@@ -38,7 +53,7 @@ class Parser(object):
     self.run()
     return
 
-  def process_for_value_threshold(self, value, threshold):
+  def process_for_key_threshold(self, value, threshold):
     ## generate processedStats based on certain criteria
     for key in self.stats:
       index = -1
@@ -52,6 +67,15 @@ class Parser(object):
 
       if index != -1 and int(self.stats[key][index][value]) > threshold:
         self.processedStats[key] = self.stats[key][index][value]
+
+  def process_for_key_value(self, k, value):
+    ## generate processedStats based on certain criteria
+    for key in self.stats:
+      for i in range(len(self.stats[key])):
+        if self.stats[key][i]['eventType'] == EVENT_TYPE.CLIENT_CLIENT_DISCONNECT and self.stats[key][i][k] == value:
+          self.processedStats[key] = self.stats[key]
+          break;
+
 
   def process_for_time(self):
     ## generate processedStats for the time that the client is connected
@@ -72,6 +96,10 @@ class Parser(object):
         if maxTimeDiff > datetime.timedelta(0) :
           self.processedStats[key] = disconnect_time_obj - connect_time_obj
 
+  def dump(self, d):
+    for key in d:
+      print("key: " + key)
+      print(json.dumps(d[key], cls=EnumEncoder, indent=4))
 
   def plot(self, hist):
     lists = sorted(hist.items())
@@ -101,7 +129,12 @@ class Parser(object):
 
 
     ## generate processedStats based on certain criteria
-    #self.process_for_value_threshold('topicBytesDelivered', 500000000)
+    self.process_for_key_value('reason', 'Forced Logout')
+    self.dump(self.processedStats)
+
+    #self.process_for_key_threshold('topicBytesDelivered', 500000000)
+
+    """ based on connection time 
     self.process_for_time()
     print("length of result: ", len(self.processedStats))
     if len(self.processedStats) < 1000 :
@@ -165,6 +198,7 @@ class Parser(object):
         self.timeHist[0] += 1
 
     self.plot(self.timeHist)
+    """
     print("Processing completed!!!")
 
 
