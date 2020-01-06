@@ -91,6 +91,49 @@ class CLIENT_DISCONNECT_EventParser(object):
       self.stats['discardsMsgTooBig'] = stats[20]
       self.stats['discardsTransmitCongestion'] = stats[21]
 
+    m = re.search('conn\((.+?)\)', self.event)
+    if m:
+      stats = m.group(1).split(', ')
+
+      self.stats['recvQBytes'] = stats[0]
+      self.stats['sendQBytes'] = stats[1]
+      self.stats['clientAddr'] = stats[2]
+      self.stats['state'] = stats[3]
+      self.stats['outOfOrder'] = stats[4]
+      self.stats['fastRetransmit'] = stats[5]
+      self.stats['timedRetransmit'] = stats[6]
+
+    m = re.search('zip\((.+?)\)', self.event)
+    if m:
+      stats = m.group(1).split(', ')
+
+      self.stats['compressedBytesReceived'] = stats[0]
+      self.stats['compressedBytesDelivered'] = stats[1]
+      self.stats['uncompressedBytesReceived'] = stats[2]
+      self.stats['uncompressedBytesDelivered'] = stats[3]
+      self.stats['compressionRatioIngress'] = stats[4]
+      self.stats['compressionRatioEgress'] = stats[5]
+      self.stats['curCompressedByteRateIngress'] = stats[6]
+      self.stats['curCompressedByteRateEgress'] = stats[7]
+      self.stats['curUncompressedByteRateIngress'] = stats[8]
+      self.stats['curUncompressedByteRateEgress'] = stats[9]
+      self.stats['avgCompressedByteRateIngress'] = stats[10]
+      self.stats['avgCompressedByteRateEgress'] = stats[11]
+      self.stats['avgUncompressedByteRateIngress'] = stats[12]
+      self.stats['avgUncompressedByteRateEgress'] = stats[13]
+
+    m = re.search('web\((.+?)\)', self.event)
+    if m:
+      stats = m.group(1).split(', ')
+
+      self.stats['webMsgsReceived'] = stats[0]
+      self.stats['webMsgsDelivered'] = stats[1]
+      self.stats['webBytesReceived'] = stats[2]
+      self.stats['webBytesDelivered'] = stats[3]
+      self.stats['webOutOfOrder'] = stats[4]
+      self.stats['webFastRetransmit'] = stats[5]
+      self.stats['webTimedRetransmit'] = stats[6]
+
     m = re.search('reason\((.+?)\)', self.event)
     if m:
       self.stats['reason'] = m.group(1)
