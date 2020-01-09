@@ -1,45 +1,34 @@
 #!/usr/bin/python3
 
-import socket
-from http.server import BaseHTTPRequestHandler, HTTPServer
-import ssl
-import time
-import sys
+from flask import Flask, request
+import os
 
 hostName = "192.168.40.238"
-hostPort = 9001
+hostPort = 9009
 
-class MyServer(BaseHTTPRequestHandler):
+ASSETS_DIR = os.path.dirname(os.path.abspath(__file__))
+app = Flask(__name__)
 
-   #    GET is for clients geting the predi
-   def do_GET(self):
-      self.send_response(200)
-      self.end_headers()
-      self.wfile.write(bytes("<p>You accessed path: %s</p>\n" % self.path, "utf-8"))
 
-   #    POST is for submitting data.
-   def do_POST(self):
-      print( "==> incomming http: ", self.path )
-      print("headers: ", self.headers)
-      content_length = int(self.headers['Content-Length']) # <--- Gets the size of data
-      post_data = self.rfile.read(content_length) # <--- Gets the data itself
-      # rfile need to be closed. Else client will complain transfer closed with outstanding read data remaining.
-      self.rfile.close()
-      print("post_data: ", post_data, ".")
-      self.protocol_version = "HTTP/1.1"
-      self.send_response(200, message="OK")
-      self.send_header('Content-Length', '0')
-      self.end_headers()
+@app.route('/')
+def index():
+    return 'Flask is running!'
 
-myServer = HTTPServer((hostName, hostPort), MyServer)
-myServer.socket = ssl.wrap_socket(myServer.socket, server_side=True, certfile='server.pem')
 
-print(time.asctime(), "Server Starts - %s:%s" % (hostName, hostPort))
+@app.route('/<path:text>', methods=['GET', 'POST'])
+def all_routes(text):
+    print("==> incoming http " + request.method + " request at " + request.path)
+    if request.method == 'GET':
+        return ("GET OK")
+    elif request.method == 'POST':
+        print("Post data: ", request.data)
+        return ("POST OK")
+    else:
+        print("Unhandled request type")
 
-try:
-   myServer.serve_forever()
-except KeyboardInterrupt:
-   pass
+if __name__ == '__main__':
+    context = ('server.crt', 'server.key')#certificate and key files
+    app.run(debug=False, ssl_context=context, host=hostName, port=hostPort)
 
-myServer.server_close()
-print(time.asctime(), "Server Stops - %s:%s" % (hostName, hostPort))
+
+
