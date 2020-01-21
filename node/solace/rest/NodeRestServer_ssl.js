@@ -11,7 +11,13 @@ var options = {
 };
 
 https.createServer(options, function (req, res) {
-    console.log('Received message: ' + req.url);
+	var body = "";
+	req.on('data', (chunk) => {
+		body += chunk.toString();
+	}).on('end', () => {
+		console.log('Received message: ' + body + " at url " + req.url);
+	});
+	
     res.writeHead(200);
     res.write("Server is working");
     res.end();
