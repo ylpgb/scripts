@@ -1,6 +1,6 @@
 var http = require('http');
 
-var RC_HOST = '192.168.40.238';
+var RC_HOST = '192.168.40.234';
 var RC_PORT = 9009;
 
 http.createServer(function (req, res) {

@@ -1,0 +1,5 @@
+subjectAltName = @alt_names
+[alt_names]
+DNS.1 = solace
+DNS.2 = client1.ddns.net
+DNS.3 = client1

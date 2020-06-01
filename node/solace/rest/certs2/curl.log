@@ -1,0 +1,7 @@
+HTTP/1.1 200 OK
+Cache-Control: no-cache
+Content-Length: 0
+Server: Solace_PubSub+_Enterprise/9.3.1.5
+Set-Cookie: TSID=3c97fd408e2f1066; Path=/; HttpOnly
+Solace-Client-Name: #rest-3c97fd408e2f1066
+
