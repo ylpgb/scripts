@@ -1,0 +1,74 @@
+#!/usr/bin/env run-router-script
+#
+
+<%args>
+cli      => 1         # Gather info from CLI.
+soldebug => 0         # Gather info from SOLDEBUG.
+linux    => 0
+</%args>
+
+<%perl>
+sub section($$) {
+  my ($type, $name) = @_;
+  print("*** $type - $name ***\n");
+}
+</%perl>
+
+
+<%script type = "cli">
+
+% if ($cli) {
+enable
+configure
+message-spool message-vpn siteA
+
+% for my $i (1 .. 500000000) {
+    create queue testtesttesttesttesttesttesttesttesttesttesttesttesttest_q<% $i %>
+    permission all delete
+    subscription topic testtesttesttesttesttesttesttesttesttesttesttesttesttest/durable/>
+    subscription topic testtesttesttesttesttesttesttesttesttesttesttesttesttest/durable1/>
+    subscription topic testtesttesttesttesttesttesttesttesttesttesttesttesttest/durable2/>
+    subscription topic testtesttesttesttesttesttesttesttesttesttesttesttesttest/durable3/>
+    subscription topic testtesttesttesttesttesttesttesttesttesttesttesttesttest/durable4/>
+    subscription topic testtesttesttesttesttesttesttesttesttesttesttesttesttest/durable5/>
+    subscription topic testtesttesttesttesttesttesttesttesttesttesttesttesttest/durable6/>
+    subscription topic testtesttesttesttesttesttesttesttesttesttesttesttesttest/durable7/>
+    subscription topic testtesttesttesttesttesttesttesttesttesttesttesttesttest/durable8/>
+    subscription topic testtesttesttesttesttesttesttesttesttesttesttesttesttest/durable10/>
+    no shutdown
+    exit
+
+    queue testtesttesttesttesttesttesttesttesttesttesttesttesttest_q<% $i %>
+    shutdown
+    exit
+    no queue testtesttesttesttesttesttesttesttesttesttesttesttesttest_q<% $i %>
+% sleep(1)
+% }
+
+% }
+
+<%script type = "soldebug">
+
+% if ($soldebug) {
+
+% for my $i (1 .. 5) {
+   :lconn 1
+   netstat
+   bufs
+   :unsafe
+   ConnListenHdlr_show
+% sleep(1)
+% }
+
+% }
+
+<%script type = "linux">
+
+% if ($linux) {
+
+% for my $i (1 .. 5) {
+   sudo vmstat
+   sleep 1
+% }
+
+% }
