@@ -1,4 +1,4 @@
-#!/usr/bin/env run-router-script
+#!/usr/bin/env ../run-router-script
 #
 
 <%args>
@@ -25,16 +25,9 @@ message-spool message-vpn siteA
 % for my $i (1 .. 500000000) {
     create queue testtesttesttesttesttesttesttesttesttesttesttesttesttest_q<% $i %>
     permission all delete
-    subscription topic testtesttesttesttesttesttesttesttesttesttesttesttesttest/durable/>
-    subscription topic testtesttesttesttesttesttesttesttesttesttesttesttesttest/durable1/>
-    subscription topic testtesttesttesttesttesttesttesttesttesttesttesttesttest/durable2/>
-    subscription topic testtesttesttesttesttesttesttesttesttesttesttesttesttest/durable3/>
-    subscription topic testtesttesttesttesttesttesttesttesttesttesttesttesttest/durable4/>
-    subscription topic testtesttesttesttesttesttesttesttesttesttesttesttesttest/durable5/>
-    subscription topic testtesttesttesttesttesttesttesttesttesttesttesttesttest/durable6/>
-    subscription topic testtesttesttesttesttesttesttesttesttesttesttesttesttest/durable7/>
-    subscription topic testtesttesttesttesttesttesttesttesttesttesttesttesttest/durable8/>
-    subscription topic testtesttesttesttesttesttesttesttesttesttesttesttesttest/durable10/>
+% for my $j (1 .. 1000) {
+    subscription topic testtesttesttesttesttesttesttesttesttesttesttesttesttest/durable<% $j %>/>
+% }
     no shutdown
     exit
 
