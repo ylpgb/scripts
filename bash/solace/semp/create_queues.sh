@@ -7,7 +7,7 @@ BROKER_SEMP_URL=192.168.40.11:80
 MESSAGE_VPN=default
 
 for i in {1..5000}; do
-   
-   curl -X POST -u $MANAGEMENT_USER:$MANAGEMENT_PASSWORD http://$BROKER_SEMP_URL/SEMP/v2/config/msgVpns/$MESSAGE_VPN/queues -H "content-type: application/json" -d "{\"queueName\":\"test_q$i\",\"accessType\":\"non-exclusive\",\"egressEnabled\":true,\"ingressEnabled\":true,\"permission\":\"delete\"}"
+   curl -d"<rpc><message-spool><vpn-name>$MESSAGE_VPN</vpn-name><create><queue><name>test_q$i</name></queue></create></message-spool></rpc>" -u $MANAGEMENT_USER:$MANAGEMENT_PASSWORD http://$BROKER_SEMP_URL/SEMP
+   curl -d"<rpc><message-spool><vpn-name>$MESSAGE_VPN</vpn-name><queue><name>test_q$i</name><no><shutdown></shutdown></no></queue></message-spool></rpc>" -u $MANAGEMENT_USER:$MANAGEMENT_PASSWORD http://$BROKER_SEMP_URL/SEMP
 done
 
