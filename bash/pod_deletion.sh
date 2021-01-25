@@ -1,5 +1,18 @@
 #!/bin/bash
 
+###################################
+## This script is used to reproduce the issue in SOL-44990
+## How to use:
+## 1. Create Kubernetes HA deployment following Solace Kubernetes quick start documentation, e.g. helm install solace-release solacecharts/pubsubplus ./values.yaml
+## 2. Get pod names with "kubectl get pods". Example output is solace-release-pubsubplus-0, solace-release-pubsubplus-1 and solace-release-pubsubplus-2.
+## 3. Updatfge POD_NAME_PREFIX to the pod name withotu the last digit.
+## 4. Run the script  ./pod_deletion.sh | tee sol-44990.log
+## 5. Monitor the log file sol-44990.log. If the deleted broker doesn't come back after some time, e.g. 2mins, use following commands to verify whether the issue is reproduced:
+##    - kubectl exec -it <pod-name> -- bash
+##    - curl --unix-socket /var/run/solace/consul -X GET http://127.0.0.1/v1/operator/raft/configuration | python -m json.tool (check whether all servers are valid)
+##    - Enter bnroker cli console with command "cli" and verify redundancy status with CLI command "show redundancy" and redundancy group with "show redundancy group".
+###################################
+
 POD_NAME_PREFIX=solace-release-pubsubplus-
 
 poll_pod_status() {
@@ -42,8 +55,8 @@ delete_pod() {
   else
     kubectl delete pod $podName
     echo "Pod $podName is deleted. Checking it's status"
-    # wait for 2 mins for the pod to come up
-    for ((i = 0 ; i < 120 ; i++)); do
+    # put a large number here so that the script will wait if the pod readines_check fails or guarantted-active is not 200 or 503
+    for ((i = 0 ; i < 9999999 ; i++)); do
        poll_pod_status $podName
        podActive=$?
        if [[ "$podActive" != "0" && "$podActive" != "1" ]] ; then
