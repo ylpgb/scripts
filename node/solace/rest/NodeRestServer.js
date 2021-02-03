@@ -1,10 +1,10 @@
 var http = require('http');
 
-var RC_HOST = '192.168.40.234';
+var RC_HOST = '10.12.1.232';
 var RC_PORT = 9009;
 
 http.createServer(function (req, res) {
-    console.log('Received message: ' + req.url);
+    console.log('Received message (from ' + req.connection.remoteAddress + '): ' + req.url);
     res.writeHead(200);
     res.write("Server is working");
     res.end();
