@@ -15,8 +15,9 @@ check_message_vpn_Upstatus() {
 }
 
 release_redundancy() {
-      ret=`curl -s -d'<rpc><redundancy><release-activity></release-activity></redundancy></rpc>' -u $USER:$PASS http://$1/SEMP`
-      ret=`curl -s -d'<rpc><redundancy><no><release-activity></release-activity></no></redundancy></rpc>' -u $USER:$PASS http://$1/SEMP`
+      #ret=`curl -s -d'<rpc><redundancy><release-activity></release-activity></redundancy></rpc>' -u $USER:$PASS http://$1/SEMP`
+      #ret=`curl -s -d'<rpc><redundancy><no><release-activity></release-activity></no></redundancy></rpc>' -u $USER:$PASS http://$1/SEMP`
+      ret=`curl -s -d'<rpc><reload></reload></rpc>' -u $USER:$PASS http://$1/SEMP`
 }
 
 check_redundancyStatus() {
@@ -66,16 +67,17 @@ failover() {
           sleep 1
       done 
 
-      check_message_vpn_Upstatus $mate
-      status=$?
-      if [[ "$status" == "1" ]] ; then
-         echo "VPN on $mate is up"
-      else
-         while true ; do
-            echo "VPN on $mate is down"
-            sleep 1
-         done
-      fi
+      while true ; do
+          check_message_vpn_Upstatus $mate
+          status=$?
+          if [[ "$status" == "1" ]] ; then
+             echo "VPN on $mate is up"
+             break
+          else
+             echo "VPN on $mate is down"
+             sleep 1
+          fi
+      done
 }
 
 stress_test() {
