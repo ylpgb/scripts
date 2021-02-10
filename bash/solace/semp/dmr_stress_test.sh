@@ -18,6 +18,7 @@ release_redundancy() {
       #ret=`curl -s -d'<rpc><redundancy><release-activity></release-activity></redundancy></rpc>' -u $USER:$PASS http://$1/SEMP`
       #ret=`curl -s -d'<rpc><redundancy><no><release-activity></release-activity></no></redundancy></rpc>' -u $USER:$PASS http://$1/SEMP`
       ret=`curl -s -d'<rpc><reload></reload></rpc>' -u $USER:$PASS http://$1/SEMP`
+      sleep 5
 }
 
 check_redundancyStatus() {
@@ -59,11 +60,13 @@ failover() {
       release_redundancy $active
       while true ; do
           check_redundancyStatus $mate
+          status=$?
+          is_localActive $mate
           ret=$?
-          if [[ "$ret" == "1" ]] ; then
+          if [[ "$ret" == "1" && "$status" == "1" ]] ; then
              break 
           fi
-          echo "Redundancy on $mate is not up yet"
+          echo "Redundancy on $mate is not up or not active"
           sleep 1
       done 
 
