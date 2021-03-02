@@ -51,7 +51,10 @@ failover() {
   standby=$2
   count=$3
 
-  for((i=0;i<$count; i++)); do
+  echo "count is $count"
+
+  for((idx=0;idx<$count;idx++)); do
+    echo "Performing failover number $idx"
     # perform failover and failback before deleting the pod
     echo "Failover: Release activity on $active"
     release_activity $active    
