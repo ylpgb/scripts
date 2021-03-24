@@ -6,14 +6,15 @@ import time
 import threading
 
 hostName = "mrgjijghtuh0z.messaging.solace.cloud"
+#hostName = "cloud.ylpsingapore.com"
 hostPort = 9000
 username = 'client1'
 password = 'client1'
 topic = "T/rest/pubsub"
 
-numMsgs=5000
-delay=0.1
-numClients=3
+numMsgs=50000
+delay=0.01
+numClients=70
 
 class client(threading.Thread):
 

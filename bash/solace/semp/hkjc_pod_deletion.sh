@@ -1,12 +1,12 @@
 #!/bin/bash
 
-POD_NAME_PREFIX=scb-ha-pubsubplus-
-kubeconfig=/Users/admin/.kube/config.aws
+POD_NAME_PREFIX=hkjc-pubsubplus-
+kubeconfig=/Users/admin/.kube/config.lp-cluster-3
 
 poll_pod_status() {
   podName=$1
   podStatus=`kubectl --kubeconfig=$kubeconfig exec -it $podName -- curl -s -d'<rpc><show><redundancy></redundancy></show></rpc>' -u admin:admin http://localhost:8080/SEMP | grep redundancy-status | grep Up`
-  #echo "podStatus: $podStatus"
+  echo "podStatus: $podStatus"
   podActive=`kubectl --kubeconfig=$kubeconfig exec -it $podName -- curl -s -o /dev/null -w '%{http_code}' http://localhost:5550/health-check/guaranteed-active` >> /dev/null
   #echo "podActive: $podActive"
 

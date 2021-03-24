@@ -8,16 +8,16 @@
 // If maxSockets is omited, default is Infinity. 
 
 var http = require('http');
-var keepAliveAgent = new http.Agent({ keepAlive: true, maxSockets: 1 });
-//var keepAliveAgent = new http.Agent({ keepAlive: false, maxSockets: 1 });
+//var keepAliveAgent = new http.Agent({ keepAlive: true, maxSockets: 1 });
+var keepAliveAgent = new http.Agent({ keepAlive: false, maxSockets: 1 });
 //var keepAliveAgent = new http.Agent({ keepAlive: true, maxSockets: 90 });
 
 var userString = "Hello World JavaScript";
  
-var username = 'default';
-var password = 'default';
+var username = 'client1';
+var password = 'client1';
 
-var msgCount = 10;
+var msgCount = 50000;
 var postDelayinMs = 100;
 
 function sendPost() {
@@ -32,7 +32,7 @@ function sendPost() {
 	};
 	 
 	var options = {
-	  host: '192.168.40.230',
+	  host: 'mrgjijghtuh0z.messaging.solace.cloud',
 	  port: 9000,
 	  path: '/T/rest/pubsub',
 	  method: 'POST',

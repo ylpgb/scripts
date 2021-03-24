@@ -17,16 +17,20 @@ POD_NAME_PREFIX=solace-release-pubsubplus-
 
 poll_pod_status() {
   podName=$1
-  kubectl exec -it $podName -- /mnt/disks/solace/readiness_check.sh >> /dev/null
-  podStatus=$?
+  podStatus=`kubectl get pod $podName | grep $podName | awk '{print $3}'`
+  echo "podStatus: $podStatus."
+  if [[ "$podStatus" != "Running" ]] ; then
+     return 2
+  fi
+  podStatus=`kubectl exec -it $podName -- curl -s -d'<rpc><show><redundancy></redundancy></show></rpc>' -u admin:admin http://localhost:8080/SEMP | grep redundancy-status | grep Up`
   #echo "podStatus: $podStatus"
   podActive=`kubectl exec -it $podName -- curl -s -o /dev/null -w '%{http_code}' http://localhost:5550/health-check/guaranteed-active` >> /dev/null
   #echo "podActive: $podActive"
 
-  if [[ "$podStatus" == "0" && $podActive == "200" ]] ; then
+  if [[ "$podStatus" != "" && $podActive == "200" ]] ; then
     #echo "$podName is active"
     return 0
-  elif [[ "$podStatus" == "0" && $podActive == "503" ]] ; then
+  elif [[ "$podStatus" != "" && $podActive == "503" ]] ; then
     #echo "$podName is not active"
     return 1
   else
@@ -54,7 +58,7 @@ delete_pod() {
     echo "Pod is not active. Skipping"
   else
     kubectl delete pod $podName
-    echo "Pod $podName is deleted. Checking it's status"
+    echo "Pod $podName is deleted. Checking its status"
     # put a large number here so that the script will wait if the pod readines_check fails or guarantted-active is not 200 or 503
     for ((i = 0 ; i < 9999999 ; i++)); do
        poll_pod_status $podName

@@ -8,7 +8,7 @@ MESSAGE_VPN=default
 REST_SERVER=perf-131-66-
 REST_PORT=9009
 
-for i in {1..10}; do
+for i in {3..100}; do
    
    curl -X DELETE -u $MANAGEMENT_USER:$MANAGEMENT_PASSWORD http://$BROKER_SEMP_URL/SEMP/v2/config/msgVpns/$MESSAGE_VPN/restDeliveryPoints/rdp$i/restConsumers/rc1 
    curl -X DELETE -u $MANAGEMENT_USER:$MANAGEMENT_PASSWORD http://$BROKER_SEMP_URL/SEMP/v2/config/msgVpns/$MESSAGE_VPN/restDeliveryPoints/rdp$i

@@ -8,7 +8,7 @@ curl -d"
         <message-spool>
             <vpn-name>default</vpn-name>
             <delete-messages>
-                <queue-name>test</queue-name>
+                <queue-name>cs/test/abc</queue-name>
             </delete-messages>
         </message-spool>
     </admin>
