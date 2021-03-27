@@ -1,0 +1,74 @@
+#############################################################################
+##
+## HTML::Simple::GenericElement
+##
+## This module will add a simple element to the simple HTML object with the
+## specified element name
+##
+#############################################################################
+
+package HTML::Simple::GenericElement;
+
+use strict;
+use warnings;
+use Data::Dumper;
+use Carp;
+
+
+# new - create a new object to interact with a specific router
+#
+# Parameters:
+#   o name      - name of the element
+#   o attrs     - hash of attributes to add
+#   o value     - value of the element
+#
+
+sub new {
+  my $class = shift;
+  my %args  = @_;
+
+  # map {croak "Missing required argument: $_" if (!exists($args{$_}))} qw{name value};
+  
+  my %defaults => {attrs    => [],
+  };
+
+  my %self = %args;
+
+  foreach my $key (keys(%defaults)) {
+    if (!defined($self{$key})) {
+      $self{$args} = $defaults{$key};
+    }
+  }
+
+  bless(\%self, $class);
+
+  return \%self;
+
+}
+
+
+# serialize - convert the table into actual HTML
+
+sub serialize {
+  my ($self) = @_;
+
+  my $html;
+
+  if (@{$self->{css}}) {
+    $html .= "<$self->{name}";
+    $html .= " @{$self->{attrs}}" if @{$self->{attrs}};
+    $html .= ">";
+    $html .= "$self->{value}" if defined($self->{value});
+    $html .= "</$self->{name}>\n";
+  }
+
+  return $html;
+
+}
+
+sub setValue {
+  my ($self, $value, $attrs) = @_;
+
+}
+
+1;

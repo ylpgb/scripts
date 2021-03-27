@@ -1,0 +1,47 @@
+#!/usr/bin/perl
+
+use warnings;
+use strict;
+use FindBin;
+use Data::Dumper;
+use lib "$FindBin::Bin/../../../lib/perl";
+use lib "$FindBin::Bin/../../lib/perl";
+use HTML::Simple2;
+
+
+sub GetMilestones {
+  return ['a', 'b', 'c'];
+}
+
+my $page = HTML::Simple2->new({title => "test"});
+my $body = $page->getBody();
+
+my $div = $body->div();
+
+$div->h1("test this thing");
+
+my $table = $body->table({class => "table-class"});
+
+$table->tr()->th_("One")->th_("Two");
+$table->tr()->td_("1")->td_("2");
+$table->tr()->td_("3")->td_("4");
+
+my $table2 = $table->tr()->td_("3")->td()->table();
+$table2->tr()->th_("One")->th_("Two");
+$table2->tr()->td_("1")->td_("2");
+$table2->tr()->td_("3")->td_("4");
+
+$div->p("Select milestone for release notes:");
+
+my $sel = $div->select();
+
+my $milestones = GetMilestones();
+
+foreach my $milestone (@{$milestones}) {
+  $sel->option($milestone, {value => $milestone});
+}
+
+
+print $page->serialize({text => 1});
+
+
