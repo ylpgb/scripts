@@ -26,7 +26,7 @@ message-spool message-vpn <% $msgVpn %>
 ! pragma:interpreter:ignore-already-exists
 create queue <% $qn %>
 ! pragma:interpreter:no-ignore-already-exists
-% for my $i (1 .. 10) {
+% for my $i (1 .. 1) {
    subscription topic <%  sprintf("bruce/g/prod/csp/rpy/v1/*/*/*/*/*/sess_chk/%06d",$i) %>
 % }
 %}
@@ -54,11 +54,23 @@ dynamic-message-routing
 cluster <% $cn0 %>
 link <% $link %>
 
-% for my $idx (1 .. 10) {
+% for my $idx (1 .. 3) {
 shut
-%  sleep 3;
+%  sleep 2;
 no shut
 % }
+
+% my ($vstatus, $istatus);
+% while ( $vstatus eq "" || $istatus eq "") {
+% sleep 1;
+show cluster <% $cn0 %> link <% $link %> channel
+% ($vstatus) = ($rrsLastResult =~ /default.*Up/);
+% ($istatus) = ($rrsLastResult =~ /#cluster.*Up/);
+% if (!defined $vstatus || $vstatus eq "" || !defined $istatus || $istatus eq "") {
+%   print "DMR channel not up\n"
+% }
+% }
+
 %} 
 
 %sub checkSMRP {
@@ -67,6 +79,10 @@ home
 en
 con t
 show smrp subscriptions topic bruce*  
+%  while ($rrsLastResult eq "") {
+show smrp subscriptions topic bruce*  
+%  sleep 1
+% }
 
 %  my ($output) = ($rrsLastResult =~ /bruce/);
 %  if ($output == "1") {
@@ -81,7 +97,7 @@ show smrp subscriptions topic bruce*
 
 %sub main {
 
-% for my $i (1 .. 10) {
+% for my $i (1 .. 10000) {
 
 % delQueueSub;
 % sleep 2;
