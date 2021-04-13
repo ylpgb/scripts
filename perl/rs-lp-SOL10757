@@ -1,0 +1,46 @@
+#!/usr/bin/env run-router-script
+#
+<%args>
+$qn => "qtest"                  # queue name
+$msgVpn => default   # messageVpn
+</%args>
+
+
+%sub toggleRedun{
+<%script type = "cli">
+home
+enable
+con
+redun shut
+% sleep 1;
+no redun shut
+
+%} 
+
+%sub checkBindCount{
+<%script type = "cli">
+home
+en
+con t
+% my $bc=0;
+% while ($bc eq "N/A" || $bc<=50) {
+show queue <% $qn %> detail 
+% ($bc) = ($rrsLastResult =~ /Bind Count\s*:\s+([^\s]+)/);
+% print "--> bindCount: $bc";
+% sleep 1;
+% }
+
+%}
+
+
+%sub main {
+
+% for my $i (1 .. 10000) {
+
+% toggleRedun;
+% sleep 2;
+% checkBindCount;
+% }
+%}
+
+% main()

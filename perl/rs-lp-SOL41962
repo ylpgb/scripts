@@ -1,0 +1,99 @@
+#!/usr/bin/env run-router-script
+#
+<%args>
+$qn => "test_queue"                  # queue name
+$msgVpn => default   # messageVpn
+</%args>
+
+<%script router-num="0" type = "cli">
+%  my ($cn0, $link);
+home
+en
+con t
+show cluster *
+%  ($cn0) = ($rrsLastResult =~ /Node Name\s*:\s+([^\s]+)/);
+
+show cluster <% $cn0 %> link vmr* detail
+%  ($link) = ($rrsLastResult =~ /Remote Node Name\s*:\s+([^\s]+)/);
+
+%sub addQueueSub {
+<%script type = "cli">
+home
+enable
+con
+   
+message-spool message-vpn <% $msgVpn %>
+! pragma:interpreter:ignore-already-exists
+create queue <% $qn %>
+! pragma:interpreter:no-ignore-already-exists
+% for my $i (1 .. 10) {
+   subscription topic <%  sprintf("bruce/g/prod/csp/rpy/v1/*/*/*/*/*/sess_chk/%06d",$i) %>
+% }
+%}
+
+
+%sub delQueueSub {
+<%script router-num="0" type = "cli">
+home
+enable
+con
+message-spool message-vpn <% $msgVpn %>
+queue <% $qn %>
+shutdown
+exit
+no queue <% $qn %>
+%}
+
+%sub toggleDMRLink {
+<%script router-num="0" type = "cli">
+home
+en
+con t
+message-vpn default
+dynamic-message-routing shutdown
+home
+en
+con t
+redundancy release
+message-vpn default
+no dynamic-message-routing shutdown
+
+%} 
+
+%sub checkSMRP {
+<%script router-num="1" type = "cli">
+home
+en
+con t
+show smrp subscriptions topic bruce*  
+%  while ($rrsLastResult eq "") {
+show smrp subscriptions topic bruce*  
+%  sleep 1
+% }
+
+%  my ($output) = ($rrsLastResult =~ /bruce/);
+%  if ($output == "1") {
+%    print "--> sub present";
+%  } else {
+%    print "---> sunt not present";
+%    sleep 9999999;
+%  }
+   
+%}
+
+
+%sub main {
+
+% for my $i (1 .. 10000) {
+
+% delQueueSub;
+% sleep 2;
+% addQueueSub;
+% sleep 2;
+% toggleDMRLink;
+
+% checkSMRP;
+% }
+%}
+
+% main()

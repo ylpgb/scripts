@@ -1,0 +1,194 @@
+#!/usr/bin/env run-router-script
+
+<%args>
+clusterName => ""            # name of the cluster
+
+vpns        => "default"     # comma-separated list of VPNs to enable for DMR
+
+links       => ""            # comma-separated list of routers to link
+zip         => 0             # use compressed links
+ssl         => 0             # use encrypted links
+span        => "external"    # internal or external
+
+focus       => ""            # focus all config on single router
+</%args>
+
+% use Data::Dumper;
+
+% RrsShowOutput(0);
+
+% my @vpnList = split(/,/,$vpns);
+
+## Gather this info for all nodes.
+% my %info; 
+% my ($rn, $ip, $mate, $mateIp, $cn, $nn);
+
+% for my $i (0 .. ($rrsNumRouters-1)) {
+%   print "Learning configuration of $rrsRouterNames[$i]...\n";
+
+<%script router-num="$i" type="cli">
+home
+enable
+show router-name
+
+%   ($rn) = ($rrsLastResult =~ /Router Name:\s+([^\s]+)/);
+
+%   my $routingVrf = "management";
+
+show ip vrf <% $routingVrf %>
+
+%   ($ip) = ($rrsLastResult =~ /.*static\s+([\d\.]+)/);
+
+%   $mate = "";
+%   $mateIp = "";
+
+show redundancy
+%   ($mate) = ($rrsLastResult =~ /Mate Router Name\s+: (.*)/);
+%   if ($mate) {
+
+show redundancy group node <% $mate %>
+
+%     ($mateIp) = ($rrsLastResult =~ /.*Message-Router *([\d\.]*)/);
+%   }
+
+show cluster *
+
+%   ($cn) = ($rrsLastResult =~ /Cluster Name\s+: (.*)/);
+%   if (!$cn) {
+%     $cn = $clusterName;
+%     if (!$cn) {
+%       $cn = $rn;
+%     }
+%   }
+
+%   if ($focus eq "" || $focus eq $rn) {
+
+home
+enable
+configure
+routing
+dynamic-message-routing
+! pragma:interpreter:ignore-already-exists
+create cluster <% $cn %> 
+! pragma:interpreter:no-ignore-already-exists
+shutdown
+authentication basic auth-type none
+no ssl server-certificate-validation enforce-trusted-common-name
+
+%   }
+
+show cluster <% $cn %>
+
+%   ($cn) = ($rrsLastResult =~ /Cluster Name\s+: (.*)/);
+%   ($nn) = ($rrsLastResult =~ /Node Name\s*:\s+([^\s]+)/);
+
+%   $info{$nn}{RrsNum}     = $i;
+%   $info{$nn}{RouterName} = $rn;
+%   $info{$nn}{Ip}         = $ip;
+%   $info{$nn}{Mate}       = $mate;
+%   $info{$nn}{MateIp}     = $mateIp;
+%   $info{$nn}{Cluster}    = $cn;
+
+%   if ($focus eq "" || $focus eq $rn) {
+
+home
+enable
+configure
+
+%     for my $vn (@vpnList) {
+
+home
+enable
+configure
+message-vpn <% $vn %>
+no dynamic-message-routing shutdown
+
+%     }
+%   }
+% }
+
+% RrsShowOutput(1);
+
+% my @linkList = keys(%info);
+% if ($links) {
+%   @linkList = split(/,/,$links);
+% }
+
+% while (my ($k,$v) = each (%info)) {
+%   printf("\nNode Name:      %s\n", $k);
+%   printf("  Router Name:  %s\n", $v->{RouterName});
+%   printf("  Ip Addr:      %s\n", $v->{Ip});
+%   printf("  Mate Name:    %s\n", $v->{Mate});
+%   printf("  Mate Ip Addr: %s\n", $v->{MateIp});
+%   printf("  Cluster Name: %s\n", $v->{Cluster});
+
+%   if ( ($focus eq "" || $focus eq $v->{RouterName}) && grep { /$k/ } @linkList ) {
+
+%     my $rrsNum = $v->{RrsNum};
+
+<%script router-num="$rrsNum" type="cli">
+
+home
+enable
+configure
+routing
+dynamic-message-routing 
+cluster <% $v->{Cluster} %>
+no shutdown
+
+%     for my $link (@linkList) {
+%       if ($link ne $k) {
+%         print "Creating link to $link...\n";
+
+! pragma:interpreter:ignore-already-exists
+create link <% $link %>
+! pragma:interpreter:no-ignore-already-exists
+
+shutdown
+
+connect-via <% $info{$link}{Ip} %>
+
+%       if ($info{$link}{Mate}) {
+
+connect-via <% $info{$link}{MateIp} %>
+
+%       }
+
+%       if ($zip) {
+transport compressed
+%       }
+
+%       if ($ssl) {
+transport ssl
+%       }
+span <% $span %>
+
+no shutdown
+exit
+
+%       }
+%     }
+
+%     for my $vn (@vpnList) {
+
+home
+enable
+configure
+message-vpn <% $vn %>
+dynamic-message-routing 
+%     for my $link (@linkList) {
+%       if ($link ne $k) {
+! pragma:interpreter:ignore-already-exists
+create dmr-bridge <% $link %>
+! pragma:interpreter:no-ignore-already-exists
+remote message-vpn <% $vn %>
+exit
+%       }
+%     }
+%    }
+
+%   }
+
+% }
+
+% RrsShowOutput(1);

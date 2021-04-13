@@ -1,0 +1,49 @@
+#!/usr/bin/env run-router-script
+#
+<%args>
+$msgVpn => default   # messageVpn
+</%args>
+
+%sub checkBridgeAndFailvoer {
+% my $broker = shift;
+<%script router-num="$broker" type="cli">
+home
+en
+con t
+
+% my ($state);
+% while ( $state ne "Up" ) {
+show bridge "#cluster*" message-vpn <% $msgVpn %> detail
+%  ($state) = ($rrsLastResult =~ /Connection State\s*:\s+([^\s]+)/);
+% sleep 1;
+% }
+
+show bridge "#cluster*" message-vpn <% $msgVpn %> message-spool-stats
+%  my ($dup1) = ($rrsLastResult =~ /Duplicate Messages\s*:\s+([^\s]+)/);
+
+% sleep 35;
+show bridge "#cluster*" message-vpn <% $msgVpn %> message-spool-stats
+%  my ($dup2) = ($rrsLastResult =~ /Duplicate Messages\s*:\s+([^\s]+)/);
+
+%  if ($dup1 == $dup2) {
+%    print "--> no bridge store";
+%  } else {
+%    print "---> DMR bridge stalled";
+%    sleep 9999999;
+%  }
+
+redundancy release
+% sleep 5;
+no redundancy release
+% sleep 5;
+
+%}
+
+
+
+% for my $i (1 .. 10000) {
+%    checkBridgeAndFailvoer("0");
+%    checkBridgeAndFailvoer("1");
+% }
+
+
