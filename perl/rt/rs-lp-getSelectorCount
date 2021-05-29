@@ -1,0 +1,11 @@
+#!/usr/sw/loads/currentload/unsupported/run-router-script
+
+%RrsShowOutput(0);
+
+<%script type="soldebug"/>
+:conn "mgmtplane"
+dumpSelectorBySelectorExpr
+% my ($sc) = ($rrsLastResult =~ /total=(\d+)/);
+
+%RrsShowOutput(1);
+% print "Selector Count: $sc";
