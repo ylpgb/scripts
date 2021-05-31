@@ -33,6 +33,7 @@ sudo rm -rf /usr/sw/var/soltr_9.9.0.23
 <%if-prompt "Do you want to continue">y</%if-prompt>
 home
 en
+% sleep 2;
 boot 9.9.0.23
 % sleep 5;
 

@@ -1,7 +1,11 @@
 #!/bin/bash
 # 
 
-./upgrade_reset1.sh 192.168.130.50,192.168.130.51
-./upgrade_reset2.sh 192.168.130.50,192.168.130.51
-./upgrade_reset3.sh 192.168.130.50,192.168.130.51
+for((i=0; i<100000; i++))
+do
+echo "Iteration $i..." | tee -a upgrade_reset.log
+./upgrade_reset1.sh 192.168.130.39,192.168.130.40 | tee -a upgrade_reset.log
+./upgrade_reset2.sh 192.168.130.39,192.168.130.40 | tee -a upgrade_reset.log
+./upgrade_reset3.sh 192.168.130.39,192.168.130.40 | tee -a upgrade_reset.log
+done
 

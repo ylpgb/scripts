@@ -59,6 +59,7 @@ en
 con
 service msg-backbone shut
 hardware message-spool shut
+% sleep 5;
 end
 boot 9.8.0.12
 

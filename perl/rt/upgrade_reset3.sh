@@ -3,7 +3,7 @@
 % my ($status) = "Down";
 
 # It will take time for backup to reset. Wait for 60s
-% sleep 60;
+% sleep 600;
 
 # Wait for backup to boot up
 % while ( $status ne "Enabled" ) { 
@@ -26,6 +26,7 @@ en
 con
 redundancy shutdown
 hardware message-spool shut
+% sleep 5;
 end
 admin
 system
@@ -43,6 +44,7 @@ en
 con
 redundancy shutdown
 hardware message-spool shut
+% sleep 5;
 end
 admin
 system
@@ -53,7 +55,7 @@ con
 no redundancy shutdown
 no hardware message-spool shutdown
 
-sleep 5
+% sleep 5;
 
 # Wait redundancy up on primary
 % ($status) = "Down";
