@@ -1,0 +1,51 @@
+#!/usr/sw/loads/currentload/unsupported/run-router-script
+#
+
+<%args>
+$queue                 # queue name
+$count    => 3
+$logfile  => rt54150.txt
+</%args>
+
+% RrsShowOutput(0);
+
+% my $filename = "/usr/sw/jail/logs/".$logfile;
+% open (my $fh, '>',  $filename) or die "Could not open file '$filename' $!";
+% $fh->autoflush(1);
+
+%sub prettyExec {
+%       my $command = shift;
+%       print $fh "\n\n####################\n".$command."\n####################\n";
+        <%script type="cli"/>
+        <% $command %>
+%       print $fh "\n".$rrsLastResult;
+%}
+
+
+%for (my $i=0; $i < $count; $i++) {
+<%script type="linux"/>
+echo -e `date` 
+% print $fh "\n++++++++++++++++++++\n".$rrsLastResult;
+
+% prettyExec("show queue ".$queue." stats");
+% prettyExec("show queue ".$queue." rates");
+% prettyExec("show queue ".$queue." detail");
+% sleep 3
+
+% }
+
+<%script type = "cli">
+show queue <% $queue %> detail
+%  my ($qid) = ($rrsLastResult =~ /Id\s*:\s+([^\s]+)/);
+
+<%script type = "soldebug">
+   :conn 3
+   :unsafe
+   adDumpAll
+% print $fh "\n->adDumpAll\n".$rrsLastResult;
+   adDumpQEndpointMoId <% $qid %>
+% print $fh "\n->adDumpQEndpointMoId ".$qid."\n".$rrsLastResult;
+   :exit
+
+% close $fh;
+% print "done";

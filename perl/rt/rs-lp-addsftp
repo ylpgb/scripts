@@ -1,0 +1,48 @@
+#!/usr/bin/env run-router-script
+#
+
+<%args>
+cli      => 1         # Gather info from CLI.
+soldebug => 0         # Gather info from SOLDEBUG.
+linux    => 0
+</%args>
+
+<%perl>
+sub section($$) {
+  my ($type, $name) = @_;
+  print("*** $type - $name ***\n");
+}
+</%perl>
+
+
+<%script type = "cli">
+
+% if ($cli) {
+en
+configure
+create username sftp password sftp file-transfer
+% }
+
+<%script type = "soldebug">
+
+% if ($soldebug) {
+
+% for my $i (1 .. 5) {
+   :lconn 1
+   netstat
+   bufs
+% sleep(1)
+% }
+
+% }
+
+<%script type = "linux">
+
+% if ($linux) {
+
+% for my $i (1 .. 5) {
+   sudo vmstat
+   sleep 1
+% }
+
+% }

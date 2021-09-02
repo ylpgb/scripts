@@ -1,0 +1,122 @@
+#   !/usr/bin/env run-router-script
+#
+#  This contains subroutine that is useful to other run router scripts
+#  Just add these subroutines by adding the following lines:
+#
+#  <%perl>
+#  use IPC::Cmd qw[can_run run];
+#  require (can_run("rs-util"));
+#  </%perl>
+#
+  sub brokerType {
+    my ($myRouterName) = @_;
+    # We need to find out what type of hardware this is
+    # We cannot assume system is running.
+    # System may have crashed...
+    my $myResponse = `ssh root\@$myRouterName 'cat /etc/issue' 2>&1`; # This contains the banner 
+    if ($myResponse =~ /Solace PubSub\+ (\S+)/) { # Look for the hardware
+      print "Broker type is '$1'\n";
+    } elsif ($myResponse =~ /System Software. (\S+)/) { # Old appliance software
+      print "Broker type is '$1'\n";
+    } else {
+      print "Broker type...unknown\n";
+      return "Unknown";
+    }
+
+    return $1;
+  }
+
+  sub isAppliance {
+    my ($myHardware) = @_;
+    my $isAppliance = 1;
+    if ($myHardware =~ /(Enterprise|Standard)/) {
+      # This is a VMR
+      print "This is a Software Broker...\n";
+      $isAppliance = 0;
+    } elsif ($myHardware =~ /Unknown/) {
+      print "This is not a broker...\n";
+      $isAppliance = 0;
+    } else {
+      print "This is an Appliance...\n";   
+    }
+    return $isAppliance;
+  }
+
+  sub determineVMRPath {
+    my ($myRouterName, $myPathName) = @_;
+    my $jailPath = '';
+    my $myResponse = `ssh root\@$myRouterName 'solacectl storage ls' 2>&1`;
+    # Look for the jail directory. Line looks like this
+    #   └─jail                                            30G       13M       30G       /mnt/vmr/jail
+    if ($myResponse =~ /─$myPathName +\S+ +\S+ +\S+ +(\S+)/) {
+      $jailPath = $1;
+    } else {
+      print "FATAL: Cannot find Jail path\n";
+      exit;
+    }
+    return $jailPath;
+  }
+
+  sub determineVMRJailPath {
+    my ($myRouterName) = @_;
+    my $myJailPath = determineVMRPath($myRouterName, "jail");
+    print "Jail Path is '$myJailPath'\n";
+    return $myJailPath;
+  }
+
+  sub determineVMRVarPath {
+    my ($myRouterName) = @_;
+    my $myVarPath = determineVMRPath($myRouterName, "var");
+    print "Var Path is '$myVarPath'\n";
+    return $myVarPath;
+  }
+
+  sub determineJailPath {
+    my ($myRouterName, $isAppliance) = @_;
+    if ($isAppliance) {
+      return "/usr/sw/jail";
+    } else {
+      return determineVMRJailPath($myRouterName);
+    }
+  }
+
+    sub determineVarPath {
+    my ($myRouterName, $isAppliance) = @_;
+    if ($isAppliance) {
+      return "/usr/sw/var";
+    } else {
+      return determineVMRVarPath($myRouterName);
+    }
+  }
+
+  sub stopSolace {
+    my ($myRouterName, $myIsAppliance) = @_;
+    
+    print "Stopping Solace Broker...";
+    RrsShowOutput(0);
+    if ($myIsAppliance) {
+      `ssh root\@$myRouterName 'service solace stop' 2>&1`;
+      sleep 10; # Need to wait a little
+    } else {
+      `ssh root\@$myRouterName 'solacectl service stop' 2>&1`;
+      sleep 10; # Need to wait a little
+    }
+    RrsShowOutput(1);
+    print "Completed\n";
+  }
+  
+  sub startSolace {
+    my ($myRouterName, $myIsAppliance) = @_;
+    print "Starting Solace Broker...";
+    RrsShowOutput(0);
+    if ($myIsAppliance) {
+      `ssh root\@$myRouterName 'service solace start' 2>&1`;  
+    } else {
+      `ssh root\@$myRouterName 'solacectl service start' 2>&1`;  	
+    }
+    RrsShowOutput(1);
+    print "Completed\n";
+  }
+
+# As a perl subroutine, it needs to return a true value
+return 1;

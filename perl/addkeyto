@@ -1,0 +1,247 @@
+#!/usr/bin/expect --
+# Allows password-less login and solbashrc commands for root on lab
+# routers
+# Author: Richard Perrin
+#
+# options:
+#   [-q] suppress output
+#   [-v] verbove output
+#   [-f] force: force full execution
+#   [-p <ssh-port-number>] specify the SSH port number
+#   [-u <username>] non default support username and password
+
+set progname "addkeyto"
+
+proc getopt {_argv name {_var ""} {default ""}} {
+    upvar 1 $_argv argv $_var var
+    global argc
+    set pos [lsearch -regexp $argv ^$name]
+    if {$pos >= 0} {
+	set to $pos
+	if {$_var ne ""} {
+	    set var [lindex $argv [incr to]]
+	}
+	set argv [lreplace $argv $pos $to]
+	incr argc -1
+	return 1
+    } else {
+	if {[llength [info level 0]] == 5} {set var $default}
+	return 0
+    }
+}
+
+set verbose [getopt argv -v]
+set quiet  [getopt argv -q]
+set force [getopt argv -f]
+set hasPort [getopt argv -p port]
+
+if {! $hasPort} {
+    set port 22
+} else {
+    # Get opt does not decrement argc properly
+    incr argc -1
+}
+
+set hasUser [getopt argv -u username]
+if { $hasUser } {
+    incr argc -1
+} else {
+    set username "support"
+}
+
+if {! $verbose } {
+    log_user 0;			# turn off output of sub-processes
+}
+
+if {$argc < 1 || $argc > 2} {
+    send_error "usage: $progname \[user@]host \[idfile]\n"
+    exit 1
+}
+
+# Support for user@host
+if {! $hasUser } {
+    set host_split [split [lindex $argv 0] "@"]
+    
+    if {[llength $host_split] > 2} {
+        send_error "invalid host, too many @"
+        exit 1
+    }
+
+    if {[llength $host_split] == 2} {
+        set username [lindex $host_split 0]
+        set host [lindex $host_split 1]
+        set hasUser 1
+    } else {
+        set host [lindex $host_split 0]
+    }
+} else {
+    set host [lindex $argv 0]
+}
+
+if { ! $force } {
+    # Check to see if we already can log in without a password: 7x faster than
+    # setting it all up again
+
+    if { ! [catch {eval exec ssh -p $port -o BatchMode=true -o StrictHostKeyChecking=no -o ConnectTimeout=3 root@$host true} results ] } {
+        # We were able to log in without a password, there is no need to do
+        # anything else.
+        exit
+    }
+}
+
+if {$argc != 2} {
+    set idfile "~/.ssh/id_rsa.pub"
+    if {! [file exists $idfile]} {
+        set idfile "~/.ssh/id_dsa.pub"
+    }
+} else {
+    set idfile [lindex $argv 1]
+}
+set keyfile [open "$idfile" "r"]
+set PUBKEY [read $keyfile "nonewline"]
+set BASHRC "/usr/sw/loads/currentload/scripts/solbashrc"
+set USER $env(USER)
+
+if {$hasUser} {
+    set sshuser   $username 
+    set sshpasswd $username 
+} else {
+    set sshuser   "support"
+    set sshpasswd "support"
+}
+
+set loggedInAsRoot 0
+set loginTry 0
+set timeoutTry 0
+while {$loggedInAsRoot != 1} {
+    set ssh_pid [spawn ssh -p $port -l $sshuser $host]
+    set ssh_id $spawn_id
+    expect {
+	-re "Offending (?:RSA |ECDSA )?key.* in (\[^ ]+):(\[0-9]+)" {
+	    system "sed -i $expect_out(2,string)d $expect_out(1,string)";
+	    send_error "$progname $host: conflicting host key deleted\n";
+	    continue
+	}
+	"*authenticity*connecting" { send "yes\r" ; exp_continue }
+	"continue connecting" { send "yes\r"; exp_continue }
+	"*assword" { send "$sshpasswd\r"; }
+	"Permission denied" {
+	    send_error "$progname $host: permission denied (perhaps password is not default?)";
+	    exit 1
+	}
+	timeout {
+	    send_error "$progname $host: ssh login timeout\n";
+	    exit 1
+	}
+	"# " {
+	    # This section
+	    send "sed -i.bk -e 's/PubkeyAuthentication no/PubkeyAuthentication yes/' /etc/ssh/sshd_config;\r"
+	    expect "\#";
+	    if {! $quiet } {
+		send_user "$host: password-less login already achieved\n";
+	    }
+	    exit
+	}
+	-re "ssh: (.*)" {
+	    send_error "$progname $host: ssh error: $expect_out(1,string)\n";
+	    exit 1
+	}
+    }
+
+    expect {
+	"Access Denied" {
+	    exec kill $ssh_pid
+	    set sshuser   "root"
+	    set sshpasswd "solace1"
+	    continue
+	}
+	"startup still in progress" {
+	    exec kill $ssh_pid
+	    set sshuser   "root"
+	    set sshpasswd "solace1"
+	    continue
+	}
+	"*assword" {
+	    exec kill $ssh_pid
+	    if { $loginTry == 0 } {
+	        # support user did not work, VMR perhaps?
+	        set sshuser   "sysadmin"
+	        set sshpasswd "sysadmin"
+	        set loginTry 1
+	        continue
+	    } elseif { $loginTry > 1 } {
+	        send_error "$progname $host: root login failed\n"
+	        exit 1;
+	    }
+	    # support user did not work, older load perhaps?
+	    set sshuser   "root"
+	    set sshpasswd "solace1"
+	    set loginTry 2
+	    continue
+	}
+	"$ " {
+	    send "sudo su -\r"
+	    expect {
+        	"command not found" { send "su -\r" ; exp_continue }
+		"*assword for support" { send "support\r" }
+		"*assword for $username" { send "$username\r" }
+		"*assword" { send "solace1\r" }
+		"\# " { send "\r\r" }
+	    }
+	}
+    }
+    if [catch { exp_send -i $ssh_id ": test live" }] {
+        if {$sshuser != "root"} {
+	    set sshuser   "root"
+	    set sshpasswd "solace1"
+	    continue
+	}
+	send_error "$progname $host: connection closed unexpectedly\n"
+	exit 1;
+    }
+    expect {
+        "# " { set loggedInAsRoot 1; send "\r" }
+    	timeout {
+	    # prevent multiple ssh processes
+	    send_error "$progname $host: timeout waiting for root prompt, retry\n"
+    	    exec kill $ssh_pid
+	    set timeout 30
+	    if { $timeoutTry > 2 } {
+	        send_error "$progname $host: too many timeout retries\n"
+	        exit 1;
+	    }
+	    incr timeoutTry
+        }
+    }
+}
+
+set reloadRequired true 
+set timeout 300
+expect "# " { send "grep -qi '^PubkeyAuthentication yes' /etc/ssh/sshd_config && grep -qi '^PermitRootLogin yes' /etc/ssh/sshd_config && printf 'reload %s required' 'not';\r"
+                expect {
+                    -re "reload not required" { set reloadRequired false }
+                    "# " { send "\r" }
+                }
+            }
+expect "# " { send "sed -i.bk -e 's/.*PubkeyAuthentication .*/PubkeyAuthentication yes/' -e 's/.*PermitRootLogin .*/PermitRootLogin yes/' /etc/ssh/sshd_config;\r" }
+expect "# " { send "test -d ~/.ssh || install -d -m 0755 ~/.ssh;\r" }
+expect "# " { send "grep -q \"$PUBKEY\" ~/.ssh/authorized_keys || echo $PUBKEY >> ~/.ssh/authorized_keys;\r" }
+expect "# " { send "mkdir -p /etc/ssh/authorized_keys; grep -q \"$PUBKEY\" /etc/ssh/authorized_keys/root || echo $PUBKEY >> /etc/ssh/authorized_keys/root;\r" }
+expect "# " { send "chown root:root /root; chmod 750 /root\r" }
+expect "# " { send "grep -q 'source $BASHRC' ~/.bash_profile || echo 'test -e $BASHRC && source $BASHRC' >>~/.bash_profile ;\r" }
+expect "# " { send "grep -q +$USER-$progname /usr/sw/solaceTag || echo +$USER-$progname >> /usr/sw/solaceTag;\r" }
+if {$reloadRequired == true} {
+    expect "# " { send "service sshd reload\r" }
+}
+
+expect "# " {send "touch ~/.noclear\r"}
+expect "# " {send "sed -i 's/^clear$/#clear\\ntest -f ~\\/.noclear || clear/' ~/.bash_logout\r"}
+expect "# " {send "logout\r"}
+if {$sshuser != "root"} {
+    expect "$ " {send "logout\r"}
+}
+expect "closed"
+if {! $quiet } {
+    send_user "$host: password-less login achieved\n";
+}
+exit

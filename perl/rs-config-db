@@ -1,0 +1,843 @@
+#!/usr/bin/env run-router-script
+#
+#  This transfer the dbBaseline and dbJournal to the lab and reboot
+#
+#  Working directory is expected to be your gather-diagnostic or gather-diagnostic-host directory
+#     or the directory of the dbBaseline and dbJournal file.
+#
+#  Level represent the amount of override over the diagnostic file.
+#  Higher levels include change in lower levels.
+#  Level - 0 : no change to customer data
+#          1 : min change: disk, power-redundancy, interface
+#          2 : admin-user
+#          3 : interface setup, spool setup, skip vrrp, skip system scaling
+#          4 : skip host and router name and banner
+#
+#  Version:
+#  1 - initial version
+#
+<%args>
+directory => "." # gather-diagnostic file path or the dbBaseline/dbJournal file path
+revert => 0 # revert back to before baseline change
+cleanup => 0 # Remove all trace of customer data
+level => 4 # Level of override. See help.
+noPrompt => 0 # Do not prompt before reboot.
+noReboot => 0 # Do not reboot after install
+journalToScript => 0 # put journal in a separate source file and upload it into broker's cliscripts directory
+brokerType => "" # Override broker type check: broker types are: 3230, 3260, 3530, 3560, Standard and Enterprise
+force => 0 # Force the database onto the currently running load
+</%args>
+
+<%perl>
+  use File::Temp qw(tempfile);
+  use IPC::Cmd qw[can_run run];
+
+  require (can_run("rs-util"));
+
+  # Global Variables
+  my $location = "normal";
+  my $action = "unknown";
+  my $myFH;
+  my $myLabBaselineFH;
+  my $outFH;
+  my $outBaselineFilename;
+  my $outJournalFilename;
+  my $commandLine; 
+  my $myLoad;
+  my $myHardware;
+  my $isAppliance;
+  my $hasReplay = 0;
+  my $isPragmaIgnore = 0; # Inside pragma ignore section
+  my $myIndex;
+  my $tmpdir;
+  my $myLabDbPath;
+  my $myLabJailPath;
+  my $hasEliding = 0;
+  my $hasMessageSpool = 0;
+  my $hasRetainCache = 0;
+  my $isInternalDisk = 0;
+  my $skipReplay = 0;
+  my $wwn = ""; 
+  my $canSupportEliding;
+  my $hasADB;
+
+  # Old parameters
+  my $skipIf = -1; # skip interface config (override level config if set)
+  my $skipAdminUser = -1; # skip Admin User config (override level config if set)
+  my $skipRedundancyVrrp = -1; # skip redundancy vrrp config (override level config if set)
+  my $skipHardwareDisk = -1; # skip hardware disk config (override level config if set)
+  my $skipPowerRedundnacy = -1; # skip power redundancy config (override level config if set)
+  my $skipRedundancy = -1; # skip the entire redundancy config (override level config if set)
+  my $skipHostRouterName = -1; # skip hostname and router name and banner config (override level config if set)
+  my $skipScaling = -1; # skip max-connection and max-queue-message scaling config (override level config if set)
+  my $overrideSpool = -1; # Override message-spool config (override level config if set)
+  my $overrideInterface = -1; # Use rs-tr-setup to configure interface (override level config if set)
+
+  # The baselineLocationMap and journalLocationMap is the mapping of different sections in the baseline and journal file.
+  # This location mapping can be used to determine the action that is taken 
+  # In the baseline file, most section begin with '! Configure' or '! Create'.
+  # For the journal file, each section being with '! +' and ends with '! -'
+  # The search uses the perl regex. Google search perl regex to determine how that works.
+  my @baselineLocationMap =  ({key => '! Configure ((Ethernet|Lag|SolOsPhy) Interfaces|ip vrf):', location => 'interface'},
+                              {key => '! Create Bridge:'                                        , location => 'bridge'},
+                              {key => '! Configure Redundancy'                                  , location => 'redundancy'},
+                              {key => '! Configure (Hostname|Router Name)'                      , location => 'hostname'},
+                              {key => '! Create Replay Log'                                     , location => 'replay'},
+                              {key => '! Configure Kerberos Keytab'                             , location => 'kerberos'},
+                              {key => '! Configure System'                                      , location => 'system'});
+
+  my @journalLocationMap = ({key => '! (\+|-) '                                                , location => 'normal'},
+                            {key => '((^|create |no )interface|vrf ")'                         , location => 'interface'},
+                            {key => '(^| )username "admin"'                                    , location => 'usernameAdmin'},
+                            {key => 'bridge "'                                                 , location => 'bridge'},
+                            {key => '(hostname|router-name) '                                  , location => 'hostname'},
+                            {key => 'replay-log'                                               , location => 'replay'},
+                            {key => 'keytab'                                                   , location => 'kerberos'},
+                            {key => 'power-redundancy'                                         , location => 'power-redundancy'},
+                            {key => 'redundancy'                                               , location => 'redundancy'},
+                            {key => '^system( |$)'                                             , location => 'system'});  
+  
+  # The actionMap determines the type of action you wish to take, based on:
+  #   1) what you find on the current command line, based on 'key';
+  #   2) The locationMap, based on 'location';
+  # Sometime, (1) and/or (2) are combined to determine a particular action.
+  # Once an action is taken against a line, no further action is taken against it.
+  #
+  # The action is one of:
+  #   'skip' - skip the command line
+  #   'execute' - execute the command line as is
+  #   'replace' - replace the line from something to something else.
+  #
+  # The actionMap is contructed by the function constructActionMap. It is called after
+  # information from the appliance is obtained so that the proper action can be determined.
+  my @actionMap = ();
+  sub constructActionMap {
+
+    # pragma:interpreter: has ignore-already-exists. This is always needed.
+    # Always let this through
+    push(@actionMap, {key => '! pragma:interpreter:', action => 'execute'}); 
+
+    # System scaling cannot be changed
+    if ($skipScaling) {
+      push(@actionMap, {key => 'max-connections',    location => 'system', action => 'skip'}); 
+      push(@actionMap, {key => 'max-queue-messages', location => 'system', action => 'skip'}); 
+    }
+
+    if ($skipAdminUser) {
+      push(@actionMap, {location => 'usernameAdmin', action => 'skip'});
+    }
+
+    if ($skipHostRouterName) {
+      push(@actionMap, {location => 'hostname', action => 'skip'});
+      push(@actionMap, {key => ' login-banner ', action => 'skip'});
+    }
+
+    if ($skipReplay) {
+      push(@actionMap, {location => 'replay', action => 'skip'});
+    }
+
+    if ($skipRedundancy) {
+      push(@actionMap, {location => 'redundancy', action => 'skip'});
+    }
+
+    push(@actionMap, {location => 'kerberos', action => 'skip'});
+
+    if ($skipIf) {
+      # Check if there is an interface in the line
+      # There is 'interface' in the line. The spaces before and after is to catch if someone have "interface" as a name
+      # If this is a bridge section, we will just replace the interface
+      # Otherwise, we skip, most likely routing interface.
+      push(@actionMap, {                      location => 'interface',  action => 'skip'});
+      push(@actionMap, {key => ' interface ', location => 'bridge',     action => 'replace', from => ' interface \S+', to => ' '});
+      push(@actionMap, {key => ' interface ',                           action => 'skip'});
+    }
+    if ($overrideSpool) {
+      if ($wwn ne "") {
+        push(@actionMap, {key => 'disk-array',                          action => 'replace', from => 'disk-array wwn \S+', to => "disk-array wwn \"$wwn\""});
+      } else {
+        # Lab does not have wwn. Can only do internal disk
+        push(@actionMap, {key => 'disk-array',                          action => 'replace', from => 'disk-array( wwn \S+|$)', to => 'internal-disk'});
+      }
+    }
+    if ($skipHardwareDisk) {
+      push(@actionMap, {key => 'hardware disk "',                       action => 'skip'});
+    }
+    if ($skipPowerRedundnacy) {
+      push(@actionMap, {key => 'hardware power-redundancy ',            action => 'skip'});
+    }
+    if ($skipRedundancyVrrp) {
+      push(@actionMap, {key => 'vrrp',        location => 'redundancy', action => 'skip'});
+    }
+    # For 3230, 3530 and software broker, it cannot have max-spool-usage > 800000
+    if (($myHardware eq "3230") or
+        ($myHardware eq "3530") or
+        ($myHardware eq "SolOS-TR")) {
+      push(@actionMap, {key => 'max-spool-usage',                       action => 'replace', from => 'max-spool-usage +(\d{7,}|9\d{5}|8(?!00000)\d{5})', 
+                                                                                               to => 'max-spool-usage 800000'});
+    }
+  }
+
+  sub levelMapping {
+    if ($level >= 1) {
+      if ($skipHardwareDisk == -1) {
+        $skipHardwareDisk = 1;
+      }
+      if ($skipPowerRedundnacy == -1) {
+        $skipPowerRedundnacy = 1;
+      }
+      if ($skipIf == -1) {
+        $skipIf = 1;
+      }
+    }
+    if ($level >= 2) {
+      if ($skipAdminUser == -1) {
+        $skipAdminUser = 1;
+      }
+    }
+    if ($level >= 3) {
+      if ($overrideInterface == -1) {
+        $overrideInterface = 1;
+      }
+      if ($overrideSpool == -1) {
+        $overrideSpool = 1;
+      }
+      if ($skipRedundancyVrrp == -1) {
+        $skipRedundancyVrrp = 1;
+      }
+      if ($skipScaling == -1) {
+        $skipScaling = 1;
+      }
+    }
+    if ($level >= 4) {
+      if ($skipHostRouterName == -1) {
+        $skipHostRouterName = 1;     
+      }
+    }
+    
+    # Change all settings that has not been touched to 0
+    if ($skipHardwareDisk == -1) {
+      $skipHardwareDisk = 0;
+    }
+    if ($skipPowerRedundnacy == -1) {
+      $skipPowerRedundnacy = 0;
+    }
+    if ($skipIf == -1) {
+      $skipIf = 0;
+    }
+    if ($skipAdminUser == -1) {
+      $skipAdminUser = 0;
+    }
+    if ($overrideInterface == -1) {
+      $overrideInterface = 0;
+    }
+    if ($overrideSpool == -1) {
+      $overrideSpool = 0;
+    }
+    if ($skipRedundancyVrrp == -1) {
+      $skipRedundancyVrrp = 0;
+    }    
+    if ($skipHostRouterName == -1) {
+      $skipHostRouterName = 0;     
+    }
+    if ($skipScaling == -1) {
+      $skipScaling = 0;
+    }
+  }
+
+  my $prevLocation = "normal";
+  sub execute {
+    my ($myCommandLine, $myNewCommandLine, $myLocation, $myAction, $myOutFH) = @_;
+    if ($myAction eq "execute") {
+      print $myOutFH $myCommandLine;
+    } elsif ($myAction eq "replace") {
+      printf("%6.6s %18.18s: %s", "change", $myLocation, $myCommandLine);
+      printf("%6.6s %18.18s: %s", "  to", $myLocation, $myNewCommandLine);
+      print $myOutFH $myNewCommandLine;
+    } else {
+      if ($prevLocation ne $myLocation) { # location has changed and skip action
+        print "\n"; # Add a new line in the output
+        $prevLocation = $myLocation;
+      }
+      if ($isPragmaIgnore) {
+        $myLocation = "bkup-ign:" . $myLocation;
+      }
+      printf("%6.6s %18.18s: %s", $myAction, $myLocation, $myCommandLine);
+    }
+  }
+  
+  sub detectFeatures {
+    my ($myCommandLine, $myLocation)= @_;
+        
+    if ($myCommandLine =~ /no eliding shutdown/) {
+      $hasEliding = 1;
+    }
+    
+    if ($myCommandLine =~ /no hardware message-spool shutdown/) {
+      $hasMessageSpool = 1;
+    }
+
+    if ($myCommandLine =~ /retain/) {
+      $hasRetainCache = 1;
+    }
+
+    if ($myLocation =~ /replay/) {
+      $hasReplay = 1;
+    }
+  }
+
+  sub commandLineToAction {
+    my ($myCommandLine, , $hasADB, $wwn, $location) = @_;
+
+    my $myAction = 'execute';
+
+    if ($myAction eq "execute") { 
+
+      foreach my $hash (@actionMap) {
+        if (exists $hash->{'location'} ) {
+          if ($location ne $hash->{'location'}) {
+            next;
+          }
+        }
+        if (exists $hash->{'key'} ) {
+          if ($myCommandLine =~ /$hash->{'key'}/) {
+            if ($hash->{'action'} eq 'execute') {
+              $myAction = "execute";
+              last;
+            } elsif ($hash->{'action'} eq 'skip') {
+              $myAction = "skip";
+              last;
+            } elsif ($hash->{'action'} eq 'replace') {
+              if ($myCommandLine =~ s/$hash->{'from'}/$hash->{'to'}/) {
+                $myAction = "replace";
+                last;
+              }
+            } else {
+              print "Unexpected action $hash->{'action'}";
+            }
+          }
+        } else { # key does not exist
+          if ($hash->{'action'} eq 'execute') {
+            $myAction = "execute";
+            last;
+          } elsif ($hash->{'action'} eq 'skip') {
+            $myAction = "skip";
+            last;
+          } elsif ($hash->{'action'} eq 'replace') {
+            if ($myCommandLine =~ s/$hash->{'from'}/$hash->{'to'}/) {
+              $myAction = "replace";
+              last;
+            }
+          } else {
+            print "Unexpected action $hash->{'action'}";
+          }
+        }
+      }
+    }
+
+    # Everything that is in backup:ignore is security related and 
+    # hardware/secret key dependent. We cannot use it.
+    if ($myCommandLine =~ /! pragma:backup:ignore/) { 
+      $isPragmaIgnore = 1;
+    }
+    if ($myCommandLine =~ /! pragma:backup:no-ignore/) {
+      $isPragmaIgnore = 0;
+    }
+    if ($isPragmaIgnore) {
+      $myAction = "skip"; # Skip all pragma ignore
+    }         
+
+    return ($myAction, $myCommandLine);    
+  }
+
+  # Last minute modification and execute line
+  sub executeLine {
+    my ($myCommandLine, $myLocation, $myOutFH)= @_;
+    my $newCommandLine;
+    my $myAction;
+
+    detectFeatures($myCommandLine, $myLocation);
+
+    ($myAction, $newCommandLine) = commandLineToAction(
+         $myCommandLine, $hasADB, $wwn, $myLocation);
+
+    # Go for it... execute!
+    execute($myCommandLine, $newCommandLine, $myLocation, $myAction, $myOutFH);
+  }
+
+  my $myCurrentLocation = "normal"; # local static variable for function determineLocation
+  sub determineLocation {
+    my ($myCommandLine, $isBaseline) = @_;
+
+    if ($isBaseline) {
+      # General location
+      if ($myCommandLine =~ /! (Configure|Create) (.+)/) {
+         $myCurrentLocation = $2;
+      }
+
+      # Special location
+      foreach my $element (@baselineLocationMap) {
+        if ($myCommandLine =~ /$element->{'key'}/)
+        {
+          $myCurrentLocation = $element->{'location'};
+          last; # Break out if we hit one of the conditions
+        }
+      }
+
+      # Username admin section is harder to isolate and requires special treatment
+      if ($myCommandLine =~ /(^| )username "admin"/){ # Admin Username Section, it ends when there is a blank line or another username
+        $myCurrentLocation = "usernameAdmin";
+      } elsif ($myCurrentLocation eq "usernameAdmin") { # this is a special search for end of username admin section - we look for the next 'ignore-already-exists' or a blank line (covered by normal case)
+        if ($myCommandLine =~ /! pragma:interpreter:ignore-already-exists/) {
+          $myCurrentLocation = "username"; # We should be in username section
+        }
+      } elsif ($myCommandLine =~ /create username "/) { # Username Section
+        $myCurrentLocation = "username";
+      }
+
+    } else { # Journal
+      foreach my $element (@journalLocationMap) {
+        if ($myCommandLine =~ /$element->{'key'}/)
+        {
+          $myCurrentLocation = $element->{'location'};
+          last; # Break out if we hit one of the conditions
+        }
+      }
+
+      # If it is not any of the above conditions, the existing location remains
+    }
+    return $myCurrentLocation;
+  }
+
+  sub processJournalFile {
+    my ($myFH) = @_;
+    while(<$myFH>) {
+      next if ($_ =~ /^\s*$/); # Take out the white spaces
+
+      # Determine what section I am in
+      my $myLocation = determineLocation($_, 0);
+
+      executeLine($_, $myLocation, $outFH);
+    } 
+  }
+  
+ sub determineHardware {
+    my ($assumeRunning) = @_;
+
+    my $myHardware;
+    if ($brokerType eq "") {
+      $myHardware = brokerType($rrsRouterName);
+    } else {
+      $myHardware = $brokerType;
+    }
+  	
+    my $isAppliance = isAppliance($myHardware);
+    my $myLabDbPath;
+    my $myLabJailPath;
+    my $myResponse;
+    if ($isAppliance) {   
+      $myLabDbPath = "/usr/sw/var";
+      $myLabJailPath = "/usr/sw/jail";
+    } else {
+      # This is a VMR
+      $myLabDbPath = determineVMRVarPath($rrsRouterName);
+      $myLabJailPath = determineVMRJailPath($rrsRouterName);
+      if ($myLabDbPath eq '' or $myLabJailPath eq '') {
+        FATAL ("Error finding lib path... \n");
+      }
+    }
+   
+    # Now we look for the load
+    if ($isAppliance) {
+      $myResponse = `ssh root\@$rrsRouterName 'ls -ld /usr/sw/loads/currentload' 2>&1`;
+    } else {
+      $myResponse = `ssh root\@$rrsRouterName 'ls $myLabDbPath' 2>&1`;
+    }
+    $myResponse =~ /(soltr_\S+)/;
+    my $myLoad = $1;
+    print "running load: $myLoad\n";
+    
+    my $wwn = "";
+    my $canSupportEliding = 1;
+    my $hasADB = 0;
+    if ($assumeRunning) {
+      # We can assume things are running
+      RrsShowOutput(0);
+</%perl>
+      <%script type="cli" /> # CLI script /
+      show hardware detail      
+<%perl>     
+      RrsShowOutput(1);
+      if ($rrsLastResult=~ /WWN\:\s+(\S+)/) {
+        $wwn = $1;
+      }
+      
+      if ($rrsLastResult =~ /NAB-0401EM/) {
+        # NAB-0401 do not have enough memory for eliding
+        $canSupportEliding = 0;
+      }
+      
+      if ($rrsLastResult =~ /ADB/) {
+        $hasADB = 1;
+      }
+        
+    }
+    
+    return ($isAppliance, $myHardware, $myLoad, $myLabDbPath, $myLabJailPath, 
+            $wwn, $canSupportEliding, $hasADB);
+  }
+
+  sub configureInterface { # Configure interface for the appliance
+    if ($isAppliance) {
+      RrsShowOutput(0);
+</%perl>
+      <%script type="cli" /> # CLI script /
+      show ip vrf msg-backbone
+<%perl>
+      RrsShowOutput(1);
+      if (index($rrsLastResult, "Number of interfaces: 0") != -1) {
+        print "Running rs-tr-setup...";
+        RrsShowOutput(0);
+</%perl>
+        <& rs-tr-setup &> # Run rt-tr-setup
+<%perl>
+        print "Done.\n";
+        RrsShowOutput(1);
+      }
+    }
+  }
+  
+  sub determineBaselineDirectory {
+    if ((-e ($directory . "/dbBaseline")) and 
+        (-e ($directory . "/dbJournal"))) {
+      print "dbBaseline/dbJournal found in current working directory.\n";
+    } else {
+      # Look for it
+      my $baselineDirectory;
+      if (-e ($directory . "/gdh-diagnostics.txt")) {
+        # This is a gdh
+        $baselineDirectory = $directory . "/container_solace/usr/sw/var/";
+      } elsif (-e ($directory . "/cli-diagnostics.txt")) { 
+        # This is a gd
+        $baselineDirectory = $directory . "/usr/sw/var/";
+      } else {
+        Fatal("Cannot find local dbBaseline directory. Please start command in a diagnostics directory.\n");
+      }
+      # Check if the expected load is there
+      my $myResponse = `ls $baselineDirectory 2>&1`;
+      my $myDiagnosticLoad = "Unknown";
+      if ($myResponse =~ /(soltr_\S+)/) {
+        $myDiagnosticLoad = $1;
+      }
+      $baselineDirectory .= "${myLoad}/db";
+      unless (-d $baselineDirectory) {
+        print "Expect to find baseline directory at $baselineDirectory, but it is not there.\n";
+        my $fatalLine;
+        if ($myLoad eq $myDiagnosticLoad) {
+          $fatalLine = "Try execute this command again in the actual baseline directory\n";
+        } else {
+          $fatalLine = "Your broker load is: $myLoad; Your diagnostic load is: $myDiagnosticLoad\n";
+        }
+        Fatal($fatalLine);
+      }
+      $directory = $baselineDirectory;
+      unless ((-e ($directory . "/dbBaseline")) and   
+              (-e ($directory . "/dbJournal"))) {
+        Fatal("The dbBaseline or dbJournal file does not exist in $directory.\n");
+      }
+      print "dbBaseline/dbJournal found in relative directory: $directory with load version: $myDiagnosticLoad\n";
+    }
+  }
+  
+  sub consolidateDB {
+    RrsShowOutput(0);    
+</%perl>
+    <%script type="soldebug" /> # soldebug script /
+    :conn 1
+    configDbJournalDisplay
+%   my ($myNumCommandsInJournal) = ($rrsLastResult =~ /(\d+) commands /);
+%   if (defined($myNumCommandsInJournal)) {
+%     if ($myNumCommandsInJournal ne 0) { # There are journal entries consolidate needed
+%       print "Journal contain $myNumCommandsInJournal commands. Consolidating...";
+        configDbConsolidate
+%       sleep 1; # Force consolidate may need some time. Sleep for 1 second
+%       print "Done\n";
+%     }
+%   }
+<%perl>
+    RrsShowOutput(1);
+  }
+  
+  my $addReplayFlag = 0;
+  my $addElidingFlag = 0;
+  my $addMessageSpoolFlag = 0;
+  my $addRetainCacheFlag = 0;
+  sub injectFlags {
+    my ($prepare) = @_;
+    if ($prepare) {
+      if ($hasReplay and
+          (!$skipReplay) and
+          $isAppliance and
+          (($myHardware eq "3230") or
+           ($myHardware eq "3260") or
+           ($myHardware eq "SolOS-TR"))) { # SolOS-TR is old signature. Assume older hardware for now
+        print "Baseline contains replay; Appliance does not support replay. Flag will be added to override restriction.\n"; 
+        $addReplayFlag = 1;
+      }
+    
+      if ($hasEliding and $isAppliance) {
+        # Check if the hardware supports it
+        unless ($canSupportEliding) {
+          print "Baseline contains eliding. Appliance does not support eliding. Flag will be added to override restriction.\n";
+          $addElidingFlag = 1;
+        }
+      }
+    
+      if ($hasMessageSpool and $isAppliance) {
+        # Check if there is adb
+        unless ($hasADB) {
+          print "Baseline contains message-spool. Appliance does not have ADB. Flag will be added to override restriction.\n";
+          $addMessageSpoolFlag = 1;
+        }
+      }
+    
+      if ($hasRetainCache) {
+        print "The new baseline has retain cache. Memory constraint detection not implemented yet. Flag will be added to override retain cache restrictions.\n";
+        $addRetainCacheFlag = 1;
+      }     
+    } else {
+      if ($addReplayFlag) {
+</%perl>
+        <%script type="linux" /> # Linux script //
+        touch /usr/sw/loads/currentload/.allowReplayLog
+<%perl>     
+      }
+      if ($addElidingFlag) {
+</%perl>
+          <%script type="linux" /> # Linux script //
+          touch /usr/sw/loads/currentload/.allowEliding
+<%perl>
+      }
+      if ($addMessageSpoolFlag) {
+</%perl>
+          <%script type="linux" /> # Linux script //
+          touch /usr/sw/loads/currentload/enableRfadEmu
+<%perl>       
+      }
+      if ($addRetainCacheFlag) {
+        if ($isAppliance) {
+</%perl>
+          <%script type="linux" /> # Linux script //
+          touch /usr/sw/loads/currentload/.allowRetainCache
+<%perl>
+        } else {
+          # Linux Script does not have root access. So it cannot write into currentload.
+          `ssh root\@$rrsRouterName 'docker exec -u root -i solace touch /usr/sw/loads/currentload/.allowRetainCache' 2>&1`;
+        }       
+      }
+    }
+  }
+
+  ################################
+  # Start of main function
+  ################################
+  system("addkeyto $rrsRouterName");
+  
+  my $assumeRunning = 1;
+  if ($revert or $cleanup) {
+    # cannot assume system is running
+    $assumeRunning = 0;
+  }
+    
+  ($isAppliance, $myHardware, $myLoad, $myLabDbPath, $myLabJailPath, 
+   $wwn, $canSupportEliding, $hasADB) = 
+    determineHardware($assumeRunning);
+
+  if ($revert) { # Revert back to before this function
+    stopSolace($rrsRouterName, $isAppliance);
+
+    print "Revert database...";
+    my $cmd = "ssh root\@$rrsRouterName " . 
+              "'rm -Rf ${myLabDbPath}/${myLoad}/db/* ;" .
+              " cp ${myLabDbPath}/${myLoad}/.dbHistory/rs-config-db-backup/* " .
+                  "${myLabDbPath}/${myLoad}/db' 2>&1";
+    `$cmd`;
+    print "Done\n";
+
+    unless ($noReboot) {
+       # Startup again. The journal file scp does not seem to get copied completely
+       startSolace($rrsRouterName, $isAppliance);
+    }
+    exit;
+  }
+
+  if ($cleanup) {
+    # Reset the hostname...
+    my $myLongName;
+    if($isAppliance) {
+      $myLongName = "lab-${rrsRouterNetNum}-${rrsRouterNum}";
+    } else {
+      $myLongName = "vmr-${rrsRouterNetNum}-${rrsRouterNum}";
+    }    
+
+    stopSolace($rrsRouterName, $isAppliance);
+    print "Removing all files under ${myLabDbPath}/${myLoad}/.dbHistory, and remove symlink ${myLabDbPath}/${myLoad}/db\n";
+    my $cmd = "ssh root\@$rrsRouterName " .
+              "'cd ${myLabDbPath}/${myLoad}/.dbHistory ;" .
+              "  rm -Rf * ;" .
+              "  rm -f ${myLabDbPath}/${myLoad}/db ;" .
+              "  hostnamectl set-hostname $myLongName' 2>&1";
+    `$cmd`;
+
+    startSolace($rrsRouterName, $isAppliance);
+    exit;
+  }
+ 
+  levelMapping(); # Determine the amount of change to config based on level
+
+  determineBaselineDirectory();
+
+  if ($overrideInterface) {
+    configureInterface();
+  }
+  
+  consolidateDB();
+
+  constructActionMap();
+
+  # Copy baseline file from router
+  $tmpdir = File::Temp->newdir("/tmp/rs-config-db-XXXXX", CLEANUP => 0);
+  print "Temporary Directory used: $tmpdir\n";
+  `scp root\@$rrsRouterName:${myLabDbPath}/${myLoad}/db/dbBaseline ${tmpdir}/.labBaseline 2>&1`;
+
+  open($myLabBaselineFH, '<', "${tmpdir}/.labBaseline") or Fatal("Cannot read lab dbBaseline file");
+  $outBaselineFilename = ($tmpdir . "/dbBaseline");
+  open($outFH, '>', $outBaselineFilename); # Create baseline file.
+ 
+  print "\nLab Baseline section\n";
+  print   "====================\n";
+
+  # Just copy everything into the new baseline
+  while(<$myLabBaselineFH>) {
+    $action = "execute";
+    $commandLine = $_;
+    if ($commandLine =~ /no redundancy shutdown/) { # Skip "no redundancy shutdown" in lab baseline, so that the new baseline can configure it
+      $action = "skip";
+    }
+    if ($commandLine =~ /no hardware message-spool shutdown/) { # Skip "no hardware message-spool shutdown", otherwise, the ADB reconcile will delete the queues
+      $action = "skip";
+    }
+    execute($commandLine, $commandLine, $location, $action, $outFH);
+  }
+  close $myLabBaselineFH;
+
+  print "\ndbBaseline section\n";
+  print   "==================\n";
+
+  # Add the new baseline 
+  open($myFH, '<', ($directory . "/dbBaseline")) or Fatal("Cannot read dbBaseline file: ${directory}/dbBaseline");
+  while(<$myFH>) {
+    # Version check
+    if ($_ =~ /!   Version: "(\S+)"/) {
+      my $baselineVersion = $1;
+      if (index($myLoad, $baselineVersion) == -1) {
+        # The version does not match
+        if ($force) {
+          print "Version not compatible. Baseline version: $baselineVersion. Lab version: $myLoad\n";
+          print "Forcing baseline into load\n";
+          $_ =~ s/$baselineVersion/$myLoad/;
+        } else {
+          Fatal("Version not compatible. Baseline version: $baselineVersion. Lab version: $myLoad\n");
+        }
+      }
+    }
+    
+    # Determine what section I am in
+    $location = determineLocation($_, 1);
+
+    executeLine($_, $location, $outFH);
+  }
+  close $myFH;
+  close $outFH;
+
+  print "\ndbJournal section\n";
+  print   "=================\n\n";
+ 
+  $outJournalFilename = ($tmpdir . "/dbJournal"); 
+  open($outFH, '>', $outJournalFilename); # Create journal file.
+
+  # dbJournal processing
+  my $journalFile = ($directory . "/dbJournal.3");
+  if (-e $journalFile) {
+    Fatal("Unexpected journal dbJournal.3. Please contact author.\n");
+  }
+
+  $journalFile = ($directory . "/dbJournal.2");
+  if (-e $journalFile) {
+    open($myFH, '<', $journalFile) or Fatal("Cannot read dbJournal file: $journalFile");
+
+    processJournalFile($myFH);
+    close $myFH;
+  }
+
+  $journalFile = ($directory . "/dbJournal.1");
+  if (-e $journalFile) {
+    open($myFH, '<', $journalFile) or Fatal("Cannot read dbJournal file: $journalFile");
+
+    processJournalFile($myFH);
+    close $myFH;
+  }
+ 
+  $journalFile = ($directory . "/dbJournal");
+  open($myFH, '<', $journalFile) or Fatal("Cannot read dbJournal file: $journalFile");
+
+  processJournalFile($myFH);
+
+  close $myFH;
+  close $outFH;
+
+  print "\nJournal Processing complete\n\n";
+  
+  injectFlags(1);
+
+  unless ($noPrompt) {
+    print "<enter> to install dbBaseline and dbJournal into broker";
+    unless ($noReboot) {
+      print " and reboot\n";
+    }
+    <STDIN>;
+  }
+  
+  injectFlags(0);
+
+# copy the existing dbBaseline and dbJournal first
+print "Saving existing baseline and journal\n";
+
+stopSolace($rrsRouterName, $isAppliance);
+
+# Make a backup
+print "Backing up...";
+`ssh root\@$rrsRouterName 'rm -Rf ${myLabDbPath}/${myLoad}/.dbHistory/rs-config-db-backup' 2>&1`;
+`ssh root\@$rrsRouterName 'cp -LR ${myLabDbPath}/${myLoad}/db ${myLabDbPath}/${myLoad}/.dbHistory/rs-config-db-backup' 2>&1`;
+print "Completed\n";
+
+print "Copying database...";
+`scp $outBaselineFilename root\@$rrsRouterName:${myLabDbPath}/${myLoad}/db/dbBaseline 2>&1`;
+$outJournalFilename = ($tmpdir . "/dbJournal*");
+if ($journalToScript) {
+  `scp -r $outJournalFilename root\@$rrsRouterName:${myLabJailPath}/cliscripts/ 2>&1`;
+} else { 
+  `scp -r $outJournalFilename root\@$rrsRouterName:${myLabDbPath}/${myLoad}/db/ 2>&1`;
+}
+print "Done\n";
+
+if ($journalToScript) {
+  print "The journal file has been uploaded to /usr/sw/jail/cliscripts/dbJournal.\n";
+  print "Please execute it with 'source script cliscripts/dbJournal'\n";
+}
+
+unless ($noReboot) {
+  # Startup again. The journal file scp does not seem to get copied completely
+  startSolace($rrsRouterName, $isAppliance);
+}
+
+</%perl>

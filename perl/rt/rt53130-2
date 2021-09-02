@@ -1,0 +1,38 @@
+#!/usr/sw/loads/currentload/unsupported/run-router-script
+
+<%args>
+$logfile => rt53130.txt
+</%args>
+
+%sub prettyExec {
+%       my $command = shift;
+        <%script type="linux"/>
+        echo -e "\n\n####################\n<% $command %>\n####################\n" >> /usr/sw/jail/<% $logfile %>
+        <%script type="cli"/>
+        <% $command %> >> /<% $logfile %>
+%}
+
+%RrsShowOutput(0);
+
+<%script type="cli"/>
+enable
+
+%for (my $i=0; $i < 8640; $i++) {
+<%script type="linux"/>
+echo -e "\n++++++++++++++++++++\n" >> /usr/sw/jail/<% $logfile %>
+echo -e `date` >> /usr/sw/jail/<% $logfile %>
+
+% prettyExec("show stats client detail");
+% prettyExec("show message-spool stats");
+% prettyExec("show message-spool rates");
+
+
+<%script type="linux"/>
+echo -e "\n\n####################\niostat -x\n####################\n" >> /usr/sw/jail/<% $logfile %>
+iostat -x >> /usr/sw/jail/<% $logfile %>
+echo -e "\n\n####################\ntop -n1 -b\n####################\n" >> /usr/sw/jail/<% $logfile %>
+top -n1 -b >> /usr/sw/jail/<% $logfile %>
+echo -e "\n--------------------\n" >> /usr/sw/jail/<% $logfile %>
+
+% sleep 10
+%}
