@@ -3,7 +3,8 @@
 
 <%args>
 $queue                 # queue name
-$count    => 3
+$vpn                   # vpn name
+$count    => 3         # number of itmes CLI commands to run
 $logfile  => rt54150.txt
 </%args>
 
@@ -27,15 +28,15 @@ $logfile  => rt54150.txt
 echo -e `date` 
 % print $fh "\n++++++++++++++++++++\n".$rrsLastResult;
 
-% prettyExec("show queue ".$queue." stats");
-% prettyExec("show queue ".$queue." rates");
-% prettyExec("show queue ".$queue." detail");
+% prettyExec("show queue ".$queue." message-vpn ".$vpn." stats");
+% prettyExec("show queue ".$queue." message-vpn ".$vpn." rates");
+% prettyExec("show queue ".$queue." message-vpn ".$vpn." detail");
 % sleep 3
 
 % }
 
 <%script type = "cli">
-show queue <% $queue %> detail
+show queue <% $queue %> message-vpn <% $vpn %> detail
 %  my ($qid) = ($rrsLastResult =~ /Id\s*:\s+([^\s]+)/);
 
 <%script type = "soldebug">
@@ -45,7 +46,6 @@ show queue <% $queue %> detail
 % print $fh "\n->adDumpAll\n".$rrsLastResult;
    adDumpQEndpointMoId <% $qid %>
 % print $fh "\n->adDumpQEndpointMoId ".$qid."\n".$rrsLastResult;
-   :exit
 
 % close $fh;
 % print "done";
