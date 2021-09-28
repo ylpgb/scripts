@@ -29,7 +29,7 @@ echo -e `date`
 
 % prettyExec("show queue ".$queue." message-vpn ".$vpn." detail");
 % prettyExec("show queue ".$queue." message-vpn ".$vpn." stats");
-% prettyExec("show queue ".$queue." message-vpn ".$vpn." messages msg-id".$msgid." count 1");
+% prettyExec("show queue ".$queue." message-vpn ".$vpn." messages msg-id ".$msgid." count 1");
 % sleep 1;
 
 <%script type = "cli">
@@ -37,12 +37,15 @@ show queue <% $queue %> message-vpn <% $vpn %> detail
 %  my ($qid) = ($rrsLastResult =~ /Id\s*:\s+([^\s]+)/);
 
 <%script type = "soldebug">
+% print $fh "\n\n->soldebugn";
    :conn 3
+% print $fh "\n->:conn 3";
    :unsafe
+% print $fh "\n->:unsafe";
    adDumpFgCoreStats 
-% print $fh "\n->\adDumpFgCoreStats n".$rrsLastResult;
+% print $fh "\n->adDumpFgCoreStats \n".$rrsLastResult;
    adDumpMessages <% $msgid %> 
-% print $fh "\n->\adDumpMessages ".$msgid."\n".$rrsLastResult;
+% print $fh "\n->adDumpMessages ".$msgid."\n".$rrsLastResult;
    adDumpQEndpointMoId <% $qid %>
 % print $fh "\n->adDumpQEndpointMoId ".$qid."\n".$rrsLastResult;
 %  my ($spoolerid) = ($rrsLastResult =~ /spoolerId\s*:\s+([^\s]+)/);
