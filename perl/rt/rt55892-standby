@@ -1,0 +1,65 @@
+#!/usr/sw/loads/currentload/unsupported/run-router-script
+#
+
+<%args>
+$queue                 # queue name
+$vpn                   # vpn name
+$count    => 3         # number of itmes CLI commands to run
+$logfile  => rt55892-standby.txt
+</%args>
+
+% RrsShowOutput(0);
+
+% my $filename = "/usr/sw/jail/logs/".$logfile;
+% open (my $fh, '>',  $filename) or die "Could not open file '$filename' $!";
+% $fh->autoflush(1);
+
+%sub prettyExec {
+%       my $command = shift;
+%       print $fh "\n\n####################\n".$command."\n####################\n";
+        <%script type="cli"/>
+        <% $command %>
+%       print $fh "\n".$rrsLastResult;
+%}
+
+
+%for (my $i=0; $i < $count; $i++) {
+<%script type="linux"/>
+echo -e `date` 
+% print $fh "\n++++++++++++++++++++\n".$rrsLastResult;
+
+% prettyExec("show message-spool detail");
+% prettyExec("show message-spool stats");
+% prettyExec("show stats client detail");
+% prettyExec("show queue ".$queue." message-vpn ".$vpn." detail");
+% prettyExec("show queue ".$queue." message-vpn ".$vpn." stats detail");
+% prettyExec("show queue ".$queue." message-vpn ".$vpn." messages newest detail count 30");
+% prettyExec("show queue ".$queue." message-vpn ".$vpn." messages oldest detail count 30");
+% prettyExec("show bridge #MSGVPN_REPLICATION_BRIDGE message-vpn ".$vpn."  detail ");
+% prettyExec("show bridge #MSGVPN_REPLICATION_BRIDGE message-vpn ".$vpn."  stats");
+% prettyExec("show client #bridge*MSGVPN* message-vpn ".$vpn."  message-spool-stats");
+
+% sleep 3
+
+% }
+
+<%script type = "cli">
+show queue <% $queue %> message-vpn <% $vpn %> detail
+%  my ($qid) = ($rrsLastResult =~ /Id\s*:\s+([^\s]+)/);
+
+<%script type = "soldebug">
+   :conn 3
+   adDumpAll
+% print $fh "\n->adDumpAll\n".$rrsLastResult;
+   adDumpSpoolerTable
+% print $fh "\n->adDumpSpoolerTable\n".$rrsLastResult;
+   adDumpEgScheduler
+% print $fh "\n->adDumpEgScheduler\n".$rrsLastResult;
+   adDumpQEndpointMoId <% $qid %>
+% print $fh "\n->adDumpQEndpointMoId ".$qid."\n".$rrsLastResult;
+% my ($spoolerid) = ($rrsLastResult =~ /spoolerId\s*:\s+([^\s]+)/);
+   adDumpUnAckedList <% $spoolerid %>
+% print $fh "\n-> adDumpUnAckedList ".$spoolerid."\n".$rrsLastResult;
+
+% close $fh;
+% print "done";

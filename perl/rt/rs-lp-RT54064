@@ -1,0 +1,39 @@
+#!/usr/bin/env run-router-script
+#
+<%args>
+$msgVpn => default   # messageVpn
+</%args>
+
+
+% for my $i (1 .. 10000000) {
+<%script router-num="0" type = "cli">
+home
+enable
+configure
+message-vpn $msgVpn
+replication state standby
+
+<%script router-num="1" type = "cli">
+home
+enable
+configure
+message-vpn $msgVpn
+replication state active
+% sleep 10;
+
+<%script router-num="1" type = "cli">
+home
+enable
+configure
+message-vpn $msgVpn
+replication state standby
+
+<%script router-num="0" type = "cli">
+home
+enable
+configure
+message-vpn $msgVpn
+replication state active
+% sleep 10;
+%}
+

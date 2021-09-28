@@ -1,0 +1,82 @@
+#!/usr/sw/loads/currentload/unsupported/run-router-script
+#
+
+<%args>
+$queue                 # queue name
+$vpn                   # vpn name
+$msgid                 # mesasge ID
+$logfile  => rt55993.txt
+</%args>
+
+% RrsShowOutput(0);
+
+% my $filename = "/usr/sw/jail/logs/".$logfile;
+% open (my $fh, '>',  $filename) or die "Could not open file '$filename' $!";
+% $fh->autoflush(1);
+
+%sub prettyExec {
+%       my $command = shift;
+%       print $fh "\n\n####################\n".$command."\n####################\n";
+        <%script type="cli"/>
+        <% $command %>
+%       print $fh "\n".$rrsLastResult;
+%}
+
+
+<%script type="linux"/>
+echo -e `date` 
+% print $fh "\n++++++++++++++++++++\n".$rrsLastResult;
+
+% prettyExec("show queue ".$queue." message-vpn ".$vpn." detail");
+% prettyExec("show queue ".$queue." message-vpn ".$vpn." stats");
+% prettyExec("show queue ".$queue." message-vpn ".$vpn." messages msg-id".$msgid." count 1");
+% sleep 1;
+
+<%script type = "cli">
+show queue <% $queue %> message-vpn <% $vpn %> detail
+%  my ($qid) = ($rrsLastResult =~ /Id\s*:\s+([^\s]+)/);
+
+<%script type = "soldebug">
+   :conn 3
+   :unsafe
+   adDumpFgCoreStats 
+% print $fh "\n->\adDumpFgCoreStats n".$rrsLastResult;
+   adDumpMessages <% $msgid %> 
+% print $fh "\n->\adDumpMessages ".$msgid."\n".$rrsLastResult;
+   adDumpQEndpointMoId <% $qid %>
+% print $fh "\n->adDumpQEndpointMoId ".$qid."\n".$rrsLastResult;
+%  my ($spoolerid) = ($rrsLastResult =~ /spoolerId\s*:\s+([^\s]+)/);
+   adDumpUnAckedList <% $spoolerid %>
+% print $fh "\n->adDumpUnAckedList ".$spoolerid."\n".$rrsLastResult;
+% my @blocks = $rrsLastResult =~ /blockId=([\d]+) disk[.\n]*/g;
+% my @msgIDs = $rrsLastResult =~ /first=([\d]+) last=([\d]+)[\n]/g;
+% my ($blockid, $blockStart, $blockEnd)=(0, 0, 0);
+% for my $idx (0 .. $#blocks)
+% {
+%    if ($msgIDs[$idx*2] <= $msgid && $msgIDs[$idx*2+1] >= $msgid) {
+%      $blockid=$blocks[$idx];
+%    }
+%}
+% if ($blockid==0) {
+%   for my $idx (0 .. $#blocks)
+%   {
+%      if ($msgIDs[$idx*2+1] <= $msgid && $blocks[$idx] > $blockStart) {
+%        $blockStart=$blocks[$idx];
+%      }
+%      if ($msgIDs[$idx*2] >= $msgid ) {
+%        if ($blocks[$idx] < $blockEnd || $blockEnd==0) {
+%          $blockEnd=$blocks[$idx];
+%        }
+%      }
+%   } 
+% }
+   adDumpUnAckedListBlock <% $blockid %>
+% print $fh "\n->adDumpUnAckedListBlock ".$blockid."\n".$rrsLastResult;
+% if ($blockid==0 && $blockStart!=0) {
+%   for my $idx ($blockStart .. $blockEnd) {
+   adDumpUnAckedListBlock <% $idx %>
+% print $fh "\n->adDumpUnAckedListBlock ".$idx."\n".$rrsLastResult;
+%   }
+%}
+% close $fh;
+% print "done";

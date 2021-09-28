@@ -1,0 +1,16 @@
+DIR=/usr/sw/loads/currentload
+cd $DIR
+
+FILE=./scripts/sempv2/uwsgi.ini.tmpl
+MD5FILE=./contents.md5sum
+
+cp $FILE $FILE.bak
+cp $MD5FILE $MD5FILE.bak
+
+sed -i 's/threads = 8/threads = 4/g' $FILE
+
+MD5=`md5sum $FILE`
+sed -i '/.*\/scripts\/sempv2\/uwsgi.ini.tmpl/d' $MD5FILE
+echo $MD5 >> $MD5FILE
+
+cd -
