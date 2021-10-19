@@ -1,0 +1,64 @@
+#!/usr/sw/loads/currentload/unsupported/run-router-script
+#
+
+<%args>
+$bridge                # bridge name
+$vpn                   # vpn name
+$count    => 3         # number of itmes CLI commands to run
+$logfile  => rt56928-bridge.txt
+</%args>
+
+% RrsShowOutput(0);
+
+% my $filename = "/usr/sw/jail/logs/".$logfile;
+% open (my $fh, '>',  $filename) or die "Could not open file '$filename' $!";
+% $fh->autoflush(1);
+
+%sub prettyExec {
+%       my $command = shift;
+%       print $fh "\n\n####################\n".$command."\n####################\n";
+        <%script type="cli"/>
+        <% $command %>
+%       print $fh "\n".$rrsLastResult;
+%}
+
+<%script type="cli"/>
+show bridge <% $bridge %> message-vpn <% $vpn %> detail
+% my ($clientname) = ($rrsLastResult =~ /Client Name\s*:\s+([^\s]+)/);
+
+%for (my $i=0; $i < $count; $i++) {
+<%script type="linux"/>
+echo -e `date` 
+% print $fh "\n++++++++++++++++++++\n".$rrsLastResult;
+
+% prettyExec("show message-spool detail");
+% prettyExec("show message-spool stats");
+% prettyExec("show stats client detail");
+% prettyExec("show bridge ".$bridge." message-vpn ".$vpn." detail");
+% prettyExec("show bridge ".$bridge." message-vpn ".$vpn." stats");
+% prettyExec("show client ".$clientname."*  message-spool-stats ");
+
+% sleep 3;
+
+% }
+
+<%script type = "soldebug">
+% print $fh "\nsoldebug\n";
+   :conn 3
+% print $fh "\n->:conn 3\n";
+   :unsafe
+% print $fh "\n->:unsafe\n";
+   adDumpAll
+% print $fh "\n->adDumpAll\n".$rrsLastResult;
+% sleep 3;
+   adDumpVpnBridgeTable 
+% print $fh "\n->adDumpVpnBridgeTable\n".$rrsLastResult;
+% my @pubspoolerid = $rrsLastResult =~ /name=$bridge.*pubSpoolerId=([\d]+)/g;
+% for my $idx (0 .. $#pubspoolerid)
+%{
+   adDumpIngressFsm <% $pubspoolerid[$idx] %>
+% print $fh "\n-> adDumpIngressFsm ".$pubspoolerid[$idx]."\n".$rrsLastResult;
+%}
+
+% close $fh;
+% print "done";

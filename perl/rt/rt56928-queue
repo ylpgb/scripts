@@ -1,0 +1,73 @@
+#!/usr/sw/loads/currentload/unsupported/run-router-script
+#
+
+<%args>
+$queue                 # queue name
+$vpn                   # vpn name
+$count    => 3         # number of itmes CLI commands to run
+$logfile  => rt56928-queue.txt
+</%args>
+
+% RrsShowOutput(0);
+
+% my $filename = "/usr/sw/jail/logs/".$logfile;
+% open (my $fh, '>',  $filename) or die "Could not open file '$filename' $!";
+% $fh->autoflush(1);
+
+%sub prettyExec {
+%       my $command = shift;
+%       print $fh "\n\n####################\n".$command."\n####################\n";
+        <%script type="cli"/>
+        <% $command %>
+%       print $fh "\n".$rrsLastResult;
+%}
+
+<%script type="cli"/>
+show queue <% $queue %> message-vpn <% $vpn %> detail
+% my ($clientname) = ($rrsLastResult =~ /Client Name\s*:\s+([^\s]+)/);
+% my ($qid) = ($rrsLastResult =~ /Id\s*:\s+([^\s]+)/);
+% my ($flowid) = ($rrsLastResult =~ /Flow Id\s*:\s+([^\s]+)/);
+
+%for (my $i=0; $i < $count; $i++) {
+<%script type="linux"/>
+echo -e `date` 
+% print $fh "\n++++++++++++++++++++\n".$rrsLastResult;
+
+% prettyExec("show message-spool detail");
+% prettyExec("show message-spool stats");
+% prettyExec("show stats client detail");
+% prettyExec("show queue ".$queue." message-vpn ".$vpn." detail");
+% prettyExec("show queue ".$queue." message-vpn ".$vpn." stats detail");
+% prettyExec("show client ".$clientname."*  message-spool detail ");
+% prettyExec("show client ".$clientname."*  message-spool-stats ");
+
+% sleep 3;
+
+% }
+
+<%script type = "soldebug">
+% print $fh "\nsoldebug\n";
+   :conn 3
+% print $fh "\n->:conn 3\n";
+   :unsafe
+% print $fh "\n->:unsafe\n";
+   adDumpAll
+% print $fh "\n->adDumpAll\n".$rrsLastResult;
+% sleep 3;
+   :redirect 
+% print $fh "\n->:redirect\n";
+   adDumpSpoolerTable
+% print $fh "\n->adDumpSpoolerTable\n".$rrsLastResult;
+   :redirect 
+% print $fh "\n->:redirect\n";
+% sleep 3;
+   adDumpQEndpointMoId <% $qid %>
+% print $fh "\n->adDumpQEndpointMoId ".$qid."\n".$rrsLastResult;
+% my ($spoolerid) = ($rrsLastResult =~ /spoolerId\s*:\s+([^\s]+)/);
+   adDumpUnAckedList <% $spoolerid %>
+% print $fh "\n-> adDumpUnAckedList ".$spoolerid."\n".$rrsLastResult;
+   adDumpSubFlow <% $flowid %>
+% print $fh "\n-> adDumpSubFlow ".$flowid."\n".$rrsLastResult;
+
+% close $fh;
+% print "done";
