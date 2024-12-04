@@ -25,8 +25,10 @@ def main():
     if file_path:
         print(f"Selected file: {file_path}")
         
-        # Extract BM configurations from the Excel file
-        bm_config = BMConfig(file_path)
+    # Using the context manager to ensure the class cleanup function is called
+    with BMConfig(file_path, search_start_cell=True) as bm_config: 
+        bm_config.get_bm_config()
+        # bm_config.dump_config()
         bm_config_writer = BMConfigDTSIWriter(bm_config)
         bm_config_writer.write_dtsi()
 

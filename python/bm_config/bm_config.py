@@ -113,8 +113,9 @@ class DFTypeParams:
     filter_col_idx: int
 
 class BMConfig:
-    def __init__(self, file_path):
+    def __init__(self, file_path, search_start_cell=False):
         self.file_path = file_path
+        self.search_start_cell = search_start_cell
 
         # Variables to be populated
         self.app = None
@@ -146,19 +147,16 @@ class BMConfig:
         self.cell_wav700_num = 'C24'
         self.cell_wav700_desc = 'C25'
 
+    def __enter__(self):
         self.load_file()
-        self.get_revision()
-        self.set_model_config_params_cells()
-        self.set_model_config_params()
-        self.set_dftype_params()
-        self.get_bm_config()
+        return self
 
     def cleanup(self):
         """Cleanup resources"""
         if self.wb:
             self.wb.close()
         if self.app:
-            self.app.quit()
+            self.app.kill()
         del self.wb
         del self.app
     
@@ -177,6 +175,23 @@ class BMConfig:
 
         sheet = self.wb.sheets[self.sheet_rev_hist]
         self.revision = sheet.range(self.cell_revision).expand('down').value[-1]
+
+    def find_start_cell(self, search_value, search_range='A50:P100'):
+        """Find a cell with the specified search value within the given range"""
+
+        cell = self.sheet.range(search_range).api.Find(search_value, LookIn=xw.constants.FindLookIn.xlValues)
+        if cell:
+            # cell_address = cell.Address.replace('$', '') # Remove '$' to convert to 'B60' format 
+            # return cell_address
+            return self.sheet.range(cell.Address)
+        else:
+            print("Value not found")
+            return None
+
+    def get_end_cell(self, start_cell, row_offset, column_offset):
+        """Get the cell that is row_offset rows and column_offset columns from start_address"""
+
+        return start_cell.offset(row_offset, column_offset)
 
     def set_model_config_params_cells(self):
         """Create the model configuration parameters cells"""
@@ -210,16 +225,36 @@ class BMConfig:
         '''Create the DataFrame type parameters, which will be used to filter the extracted data'''
 
         # It takes long time for xlwings to search for the cell based on cell value. So, hardcode the cell address here.
-        for name, value in DFType.iterate():
-            match value:
-                case DFType.POOL:
-                    self.dftype_params[value] = DFTypeParams(DFType.POOL, 'I60', 'K71', 1, 2) # From I60 to K71, header is 1, filter column is 2
-                case DFType.POLICY:
-                    self.dftype_params[value] = DFTypeParams(DFType.POLICY, 'B60', 'F92', 1, 3) # From B60 to F92, header is 1, filter column is 3
-                case DFType.GENPOOL:
-                    self.dftype_params[value] = DFTypeParams(DFType.GENPOOL, 'K79', 'L84', 1, 1) # From K79 to L84, header is 1, filter column is 1
-                case DFType.LINUXCMA:
-                    self.dftype_params[value] = DFTypeParams(DFType.LINUXCMA, 'L86', 'L86', 0, 0) # From L86 to L86, header is 0, filter column is 0
+        if self.search_start_cell:
+            for name, value in DFType.iterate():
+                match value:
+                    case DFType.POOL:
+                        start_cell = self.find_start_cell('Pool ID')
+                        end_cell = self.get_end_cell(start_cell, 11, 2)
+                        self.dftype_params[value] = DFTypeParams(DFType.POOL, start_cell.get_address(), end_cell.get_address(), 1, 2) # Header is 1
+                    case DFType.POLICY:
+                        start_cell = self.find_start_cell('Resource Tag')
+                        end_cell = self.get_end_cell(start_cell, 32, 4)
+                        self.dftype_params[value] = DFTypeParams(DFType.POLICY, start_cell.get_address(), end_cell.get_address(), 1, 3) # Header is 1
+                    case DFType.GENPOOL:
+                        start_cell = self.find_start_cell('Type')
+                        end_cell = self.get_end_cell(start_cell, 5, 1)
+                        self.dftype_params[value] = DFTypeParams(DFType.GENPOOL, start_cell.get_address(), end_cell.get_address(), 1, 1) # Header is 1
+                    case DFType.LINUXCMA:
+                        start_cell = self.find_start_cell('Linux CMA')
+                        end_cell = self.get_end_cell(start_cell, 0, 1)
+                        self.dftype_params[value] = DFTypeParams(DFType.LINUXCMA, end_cell.get_address(), end_cell.get_address(), 0, 0) # Header is 0
+        else:
+            for name, value in DFType.iterate():
+                match value:
+                    case DFType.POOL:
+                        self.dftype_params[value] = DFTypeParams(DFType.POOL, 'I60', 'K71', 1, 2) # From I60 to K71, header is 1, filter column is 2
+                    case DFType.POLICY:
+                        self.dftype_params[value] = DFTypeParams(DFType.POLICY, 'B60', 'F92', 1, 3) # From B60 to F92, header is 1, filter column is 3
+                    case DFType.GENPOOL:
+                        self.dftype_params[value] = DFTypeParams(DFType.GENPOOL, 'K79', 'L84', 1, 1) # From K79 to L84, header is 1, filter column is 1
+                    case DFType.LINUXCMA:
+                        self.dftype_params[value] = DFTypeParams(DFType.LINUXCMA, 'L86', 'L86', 0, 0) # From L86 to L86, header is 0, filter column is 0
 
     def update_cell_with_validation(self, cell_address, new_value):
         """Update a cell value and reapply its data validation"""
@@ -262,6 +297,9 @@ class BMConfig:
     def extract_filter_data(self, start_cell, end_cell, header=1, filter_column_index=0):
         """Extract data from a specified range and filter out rows where column E values are None."""
         
+        # Force Excel to calculate the formulas before reading the data
+        self.sheet.api.Calculate()
+
         # Read the specified range into a DataFrame
         df = self.sheet.range(f'{start_cell}:{end_cell}').options(
             pd.DataFrame,
@@ -290,7 +328,12 @@ class BMConfig:
 
     def get_bm_config(self):
         """Get BM configuration"""
-        
+
+        self.get_revision()
+        self.set_model_config_params_cells()
+        self.set_model_config_params()
+        self.set_dftype_params()
+
         for name, value in ModelConfig.iterate():
             model_config_params = self.model_config_params[value]
             self.update_cell_with_validation(self.model_config_params_cells.cell_lgm_system, model_config_params.cell_lgm_system)
@@ -318,14 +361,6 @@ class BMConfig:
             
             # Append bm_config
             self.bm_config[value] = ModelBMConfig(**data_frames)
-                        
-            # pool_pd = self.extract_filter_data(self.dftype_params[DFType.POOL].cell_start, self.dftype_params[DFType.POOL].cell_end, self.dftype_params[DFType.POOL].header, self.dftype_params[DFType.POOL].filter_col_idx)
-            # policy_pd = self.extract_filter_data(self.dftype_params[DFType.POLICY].cell_start, self.dftype_params[DFType.POLICY].cell_end, self.dftype_params[DFType.POLICY].header, self.dftype_params[DFType.POLICY].filter_col_idx)
-            # genpool_pd = self.extract_filter_data(self.dftype_params[DFType.GENPOOL].cell_start, self.dftype_params[DFType.GENPOOL].cell_end, self.dftype_params[DFType.GENPOOL].header, self.dftype_params[DFType.GENPOOL].filter_col_idx)
-            # linuxcma = self.extract_filter_data(self.dftype_params[DFType.LINUXCMA].cell_start, self.dftype_params[DFType.LINUXCMA].cell_end, self.dftype_params[DFType.LINUXCMA].header, self.dftype_params[DFType.LINUXCMA].filter_col_idx)
-            
-            # # Append bm_config
-            # self.bm_config[value] = ModelBMConfig(pool_pd, policy_pd, genpool_pd, linuxcma)
 
     def dump_config(self):
         """Dump BM configuration"""
