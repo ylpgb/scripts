@@ -988,6 +988,8 @@ class BMConfigDTSIWriter:
     def write_dtsi_model_pool(self, f, pool_df):
         """Write the pool data to the file"""
 
+        if pool_df.empty:
+            return
         # Label of the columns may change. So use index to get the data
         id_col = 0
         num_col = 2
@@ -997,6 +999,8 @@ class BMConfigDTSIWriter:
     def write_dtsi_model_policy(self, f, policy_df):
         """Write the policy data to the file"""
 
+        if policy_df.empty:
+            return
         # Label of the columns may change. So use index to get the data
         tag_col = 0
         id_col = 1
@@ -1012,6 +1016,8 @@ class BMConfigDTSIWriter:
     def write_dtsi_model_genpool(self, f, genpool_df):
         """Write the genpool data to the file"""
 
+        if genpool_df.empty:
+            return
         type_col = 0
         size_col = 1
         f.write(f"\n")
@@ -1021,6 +1027,8 @@ class BMConfigDTSIWriter:
     def write_dtsi_model_linux_cma(self, f, linux_cma):
         """Write the linux CMA data to the file"""
 
+        if linux_cma.empty:
+            return
         f.write(f"\n")
         f.write(f"#define LINUX_CMA_SIZE 0x{linux_cma.iloc[0, 0]}\n")
         f.write(f"\n")

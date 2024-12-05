@@ -148,7 +148,12 @@ class BMConfig:
         self.cell_wav700_desc = 'C25'
 
     def __enter__(self):
-        self.load_file()
+        try:
+            self.load_file()
+        except Exception as e:
+            print(f"Failed to load file: {e}")
+            self.cleanup()
+            raise
         return self
 
     def cleanup(self):
@@ -157,8 +162,8 @@ class BMConfig:
             self.wb.close()
         if self.app:
             self.app.kill()
-        del self.wb
-        del self.app
+        self.wb = None
+        self.app = None
     
     def __exit__(self, exc_type, exc_value, traceback):
         self.cleanup()
@@ -166,15 +171,23 @@ class BMConfig:
     def load_file(self):
         """Load the Excel file"""
 
-        self.app = xw.App(visible=False)  # Set to False to run Excel in the background
-        self.wb = self.app.books.open(self.file_path)
-        self.sheet = self.wb.sheets[self.sheet_bm_allocation]
+        try:
+            self.app = xw.App(visible=False)  # Set to False to run Excel in the background
+            self.wb = self.app.books.open(self.file_path)
+            self.sheet = self.wb.sheets[self.sheet_bm_allocation]
+        except Exception as e:
+            print(f"An unexpected error when trying to open the Excel file.")
+            self.cleanup()
+            raise
 
     def get_revision(self):
         """Get the revision number from the Excel file"""
 
         sheet = self.wb.sheets[self.sheet_rev_hist]
-        self.revision = sheet.range(self.cell_revision).expand('down').value[-1]
+        if not sheet:
+            self.revision = None
+        else:
+            self.revision = sheet.range(self.cell_revision).expand('down').value[-1]
 
     def find_start_cell(self, search_value, search_range='A50:P100'):
         """Find a cell with the specified search value within the given range"""
@@ -185,8 +198,8 @@ class BMConfig:
             # return cell_address
             return self.sheet.range(cell.Address)
         else:
-            print("Value not found")
-            return None
+            print("Start cell with value '{}' not found".format(search_value))
+            raise ValueError
 
     def get_end_cell(self, start_cell, row_offset, column_offset):
         """Get the cell that is row_offset rows and column_offset columns from start_address"""
@@ -229,7 +242,7 @@ class BMConfig:
             for name, value in DFType.iterate():
                 match value:
                     case DFType.POOL:
-                        start_cell = self.find_start_cell('Pool ID')
+                        start_cell = self.find_start_cell('PoolId')
                         end_cell = self.get_end_cell(start_cell, 11, 2)
                         self.dftype_params[value] = DFTypeParams(DFType.POOL, start_cell.get_address(), end_cell.get_address(), 1, 2) # Header is 1
                     case DFType.POLICY:
@@ -237,11 +250,11 @@ class BMConfig:
                         end_cell = self.get_end_cell(start_cell, 32, 4)
                         self.dftype_params[value] = DFTypeParams(DFType.POLICY, start_cell.get_address(), end_cell.get_address(), 1, 3) # Header is 1
                     case DFType.GENPOOL:
-                        start_cell = self.find_start_cell('Type')
+                        start_cell = self.find_start_cell('GenPool Type')
                         end_cell = self.get_end_cell(start_cell, 5, 1)
                         self.dftype_params[value] = DFTypeParams(DFType.GENPOOL, start_cell.get_address(), end_cell.get_address(), 1, 1) # Header is 1
                     case DFType.LINUXCMA:
-                        start_cell = self.find_start_cell('Linux CMA')
+                        start_cell = self.find_start_cell('Total CMA ')
                         end_cell = self.get_end_cell(start_cell, 0, 1)
                         self.dftype_params[value] = DFTypeParams(DFType.LINUXCMA, end_cell.get_address(), end_cell.get_address(), 0, 0) # Header is 0
         else:
@@ -329,10 +342,13 @@ class BMConfig:
     def get_bm_config(self):
         """Get BM configuration"""
 
-        self.get_revision()
-        self.set_model_config_params_cells()
-        self.set_model_config_params()
-        self.set_dftype_params()
+        try:
+            self.get_revision()
+            self.set_model_config_params_cells()
+            self.set_model_config_params()
+            self.set_dftype_params()
+        except Exception as e:
+            raise e
 
         for name, value in ModelConfig.iterate():
             model_config_params = self.model_config_params[value]
