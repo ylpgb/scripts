@@ -1,3 +1,70 @@
+// SPDX-License-Identifier: GPL-2.0
+/*
+ * Copyright (C) 2024-{year} MaxLinear, Inc.
+ */
+
+#ifndef _BM_MAIN_MODEL_
+#define _BM_MAIN_MODEL_
+
+/*
+ * ==========================================================================
+ * BM pool/policy configuration V{bm_config_version}
+ * ==========================================================================
+ */
+
+/* DDR configuration checking */
+#if defined(CONFIG_DDR_1GB) && defined(CONFIG_DDR_2GB)
+#error "Please select only one DDR configuration"
+#endif
+
+#if !defined(CONFIG_DDR_1GB) && !defined(CONFIG_DDR_2GB)
+#define CONFIG_DDR_2GB
+#endif
+
+/* WAVE configuration checking */
+#if defined(CONFIG_WAVE_6X4) && defined(CONFIG_WAVE_700)
+#error "Please select only one WAVE configuration"
+#endif
+
+#if !defined(CONFIG_WAVE_700) && !defined(CONFIG_WAVE_6X4)
+#define CONFIG_WAVE_6X4
+#endif
+
+/* SUBSYSTEM configuration checking */
+#if defined(CONFIG_SUBSYSTEM_GW) && defined(CONFIG_SUBSYSTEM_MODEM)
+#error "Please select only one subsystem"
+#endif
+
+#if !defined(CONFIG_SUBSYSTEM_GW) && !defined(CONFIG_SUBSYSTEM_MODEM)
+#define CONFIG_SUBSYSTEM_GW
+#endif
+
+/* Define POOL and policy values */
+#ifdef CONFIG_SUBSYSTEM_GW
+#ifdef CONFIG_DDR_2GB
+#ifdef CONFIG_WAVE_700
+/***************************************************
+ * Cable GW + GW + 2GB DDR + WAVE700
+ ***************************************************/
+
+{CABLE_2GB_GW_WAVE700}
+
+#else
+#error "Only WAVE700 is supported with DOCSIS GW"
+#endif /* CONFIG_WAVE_700 */
+
+#else
+#error "Only 2GB DDR is supported with DOCSIS GW"
+#endif /* CONFIG_DDR_2GB */
+
+#elif defined(CONFIG_SUBSYSTEM_MODEM)
+#if defined(CONFIG_DDR_1GB)
+/**************************************************
+ * Cable EMTA + MODEM + 1GB DDR
+ **************************************************/
+
+{CABLE_1GB_MODEM}
+
 #else
 #error "Only 1GB DDR is supported with MODEM"
 #endif /* CONFIG_DDR_1GB */

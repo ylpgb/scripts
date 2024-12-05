@@ -1,3 +1,73 @@
+// SPDX-License-Identifier: GPL-2.0
+/*
+ * Copyright (C) 2024-{year} MaxLinear, Inc.
+ */
+
+#ifndef _BM_MAIN_MODEL_
+#define _BM_MAIN_MODEL_
+
+/*
+ * ==========================================================================
+ * BM pool/policy configuration V{bm_config_version}
+ * ==========================================================================
+ */
+
+/* DDR configuration checking */
+#if defined(CONFIG_DDR_1GB) && defined(CONFIG_DDR_2GB)
+#error "Please select only one DDR configuration"
+#endif
+
+#if !defined(CONFIG_DDR_1GB) && !defined(CONFIG_DDR_2GB)
+#define CONFIG_DDR_2GB
+#endif
+
+/* WAVE configuration checking */
+#if defined(CONFIG_WAVE_6X4) && defined(CONFIG_WAVE_700)
+#error "Please select only one WAVE configuration"
+#endif
+
+#if !defined(CONFIG_WAVE_700) && !defined(CONFIG_WAVE_6X4)
+#define CONFIG_WAVE_6X4
+#endif
+
+/* SUBSYSTEM configuration checking */
+#if defined(CONFIG_SUBSYSTEM_GW) && defined(CONFIG_SUBSYSTEM_MODEM)
+#error "Please select only one subsystem"
+#endif
+
+#if !defined(CONFIG_SUBSYSTEM_GW) && !defined(CONFIG_SUBSYSTEM_MODEM)
+#define CONFIG_SUBSYSTEM_GW
+#endif
+
+/* Define POOL and policy values */
+#ifdef CONFIG_SUBSYSTEM_GW
+#ifdef CONFIG_DDR_2GB
+#ifdef CONFIG_WAVE_6X4
+/*****************************************************
+ * EthWAN_DSL + GW + 2GB DDR + WAVE6xx
+ *****************************************************/
+
+{ETH_2GB_GW_WAVE6X4}
+
+#elif defined(CONFIG_WAVE_700)
+/*****************************************************
+ * EthWAN_DSL + GW + 2GB DDR + WAVE700
+ *****************************************************/
+
+{ETH_2GB_GW_WAVE700}
+
+#else
+#error "Please include dtsi file for WAVE configuration"
+#endif /* CONFIG_WAVE_6X4 */
+
+#elif defined(CONFIG_DDR_1GB)
+#ifdef CONFIG_WAVE_6X4
+/****************************************************
+ * EthWAN_DSL + GW + 1GB DDR + WAVE6xx
+ ****************************************************/
+ 
+{ETH_1GB_GW_WAVE6X4}
+
 #else
 #error "WAVE700 is not supported with 1GB DDR"
 #endif /* CONFIG_WAVE_6X4 */

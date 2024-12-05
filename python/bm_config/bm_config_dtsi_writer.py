@@ -15,100 +15,20 @@ from .bm_config import *
 from datetime import datetime
 import textwrap
 import os
+import io
+import re
 
 class BMConfigDTSIWriter:
-    # Define a dictionary to map ModelConfig to a string
-    model_config_str = {
-        ModelConfig.ETH_2GB_GW_WAVE6X4: textwrap.dedent("""
-            #ifdef CONFIG_SUBSYSTEM_GW
-            #ifdef CONFIG_DDR_2GB
-            #ifdef CONFIG_WAVE_6X4
-            /*****************************************************
-             * EthWAN_DSL + GW + 2GB DDR + WAVE6xx
-             *****************************************************/
-        """),
-        ModelConfig.ETH_2GB_GW_WAVE700: textwrap.dedent("""\
-            #elif defined(CONFIG_WAVE_700)
-            /*****************************************************
-             * EthWAN_DSL + GW + 2GB DDR + WAVE700
-             *****************************************************/
-        """),
-        ModelConfig.ETH_1GB_GW_WAVE6X4: textwrap.dedent("""\
-            #else
-            #error "Please include dtsi file for WAVE configuration"
-            #endif /* CONFIG_WAVE_6X4 */
-            
-            #elif defined(CONFIG_DDR_1GB)
-            #ifdef CONFIG_WAVE_6X4
-            /****************************************************
-             * EthWAN_DSL + GW + 1GB DDR + WAVE6xx
-             ****************************************************/
-        """),
-        ModelConfig.PON_2GB_GW_WAVE6X4: textwrap.dedent("""
-            #ifdef CONFIG_SUBSYSTEM_GW
-            #ifdef CONFIG_DDR_2GB
-            #ifdef CONFIG_WAVE_6X4
-            /****************************************************
-             * PON_WAN_DSL + GW + 2GB DDR + WAVE6xx
-             ****************************************************/
-        """),
-        ModelConfig.PON_2GB_GW_WAVE700: textwrap.dedent("""\
-            #elif defined(CONFIG_WAVE_700)
-            /***************************************************
-             * PON_WAN_DSL + GW + 2GB DDR + WAVE700
-             ***************************************************/
-        """),
-        ModelConfig.PON_1GB_GW_WAVE6X4: textwrap.dedent("""\
-            #else
-            #error "Please include dtsi file for WAVE configuration"
-            #endif /* CONFIG_WAVE_6X4 */
-            
-            #elif defined(CONFIG_DDR_1GB)
-            #ifdef CONFIG_WAVE_6X4
-            /***************************************************
-             * PON_WAN_DSL + GW + 1GB DDR + WAVE6xx
-             ***************************************************/
-        """),
-        ModelConfig.CABLE_2GB_GW_WAVE700: textwrap.dedent("""
-            #ifdef CONFIG_SUBSYSTEM_GW
-            #ifdef CONFIG_DDR_2GB
-            #ifdef CONFIG_WAVE_700
-            /***************************************************
-             * Cable GW + GW + 2GB DDR + WAVE700
-             ***************************************************/
-        """),
-        ModelConfig.CABLE_1GB_MODEM: textwrap.dedent("""\
-            #else
-            #error "Only WAVE700 is supported with DOCSIS GW"
-            #endif /* CONFIG_WAVE_700 */
-            
-            #else
-            #error "Only 2GB DDR is supported with DOCSIS GW"
-            #endif /* CONFIG_DDR_2GB */
-            
-            #elif defined(CONFIG_SUBSYSTEM_MODEM)
-            #if defined(CONFIG_DDR_1GB)
-            /**************************************************
-             * Cable EMTA + MODEM + 1GB DDR
-             **************************************************/
-        """)
-    }
-    
     def __init__(self, BMConfig, eth_file="bm_main_eth.dtsi", pon_file="bm_main_pon.dtsi", cable_file="bm_main_docsis.dtsi"):
         self.BMConfig = BMConfig
         self.eth_file = eth_file
         self.pon_file = pon_file
         self.cable_file = cable_file
-        
-        bm_config_dir = os.path.dirname(os.path.abspath(__file__))
-        self.text_head = self.read_file(os.path.join(bm_config_dir, 'text_head.txt'))
-        self.text_tail_eth = self.read_file(os.path.join(bm_config_dir, 'text_tail_eth.txt'))
-        self.text_tail_pon = self.read_file(os.path.join(bm_config_dir, 'text_tail_pon.txt'))
-        self.text_tail_cable = self.read_file(os.path.join(bm_config_dir, 'text_tail_cable.txt'))
+        self.bm_config_dir = os.path.dirname(os.path.abspath(__file__))
+        self.post_config_token = '&cqm_lgm'
 
-    def read_file(self, file_path):
-        with open(file_path, 'r') as f:
-            return f.read()
+        # Define a dictionary to store the output text for each model config
+        self.model_config_text = {}
             
     def write_dtsi_model_pool(self, f, pool_df):
         """Write the pool data to the file"""
@@ -156,36 +76,93 @@ class BMConfigDTSIWriter:
             return
         f.write(f"\n")
         f.write(f"#define LINUX_CMA_SIZE 0x{linux_cma.iloc[0, 0]}\n")
-        f.write(f"\n")
-        
+
+    def populate_model_config_test(self):
+        for name, value in ModelConfig.iterate():
+            output = io.StringIO()
+            self.write_dtsi_model_pool(output, self.BMConfig.bm_config[value].pool_df)
+            self.write_dtsi_model_policy(output, self.BMConfig.bm_config[value].policy_df)
+            self.write_dtsi_model_genpool(output, self.BMConfig.bm_config[value].genpool_df)
+            self.write_dtsi_model_linux_cma(output, self.BMConfig.bm_config[value].linuxcma_df)
+            self.model_config_text[value] = output.getvalue()
+
+    def replace_braces_after_match(self, text, match_text):
+        # Find the position of the match_text
+        match = re.search(re.escape(match_text), text)
+        if not match:
+            return text
+
+        # Split the text into two parts: before and after the match
+        before_match = text[:match.end()]
+        after_match = text[match.end():]
+
+        # Replace { with << and } with >> in the after_match part
+        after_match = after_match.replace('{', '<<').replace('}', '>>')
+
+        # Combine the parts back together
+        return before_match + after_match
+
+    def revert_replace(self, text):
+        return text.replace('<<', '{').replace('>>', '}')
+
+    def format_output(self, template_file, model_configs):
+        with open(os.path.join(self.bm_config_dir, template_file), 'r') as template:
+            output = template.read()
+            output = self.replace_braces_after_match(output, self.post_config_token)
+            output = output.format(year=datetime.now().year,
+                                   bm_config_version=self.BMConfig.revision,
+                                   **{config_name: self.model_config_text[config_value] for config_name, config_value in model_configs.items()})
+            output = self.revert_replace(output)
+        return output
+
+    def get_model_configurations(self, prefix):
+        return {attr: getattr(ModelConfig, attr) for attr in dir(ModelConfig) if attr.startswith(prefix)}
+    
+    def generate_model_config_text(self, model):
+        # model_templates = {
+        #     Model.ETH: ('bm_main_eth.dtsi', {
+        #         'ETH_2GB_GW_WAVE6X4': ModelConfig.ETH_2GB_GW_WAVE6X4,
+        #         'ETH_2GB_GW_WAVE700': ModelConfig.ETH_2GB_GW_WAVE700,
+        #         'ETH_1GB_GW_WAVE6X4': ModelConfig.ETH_1GB_GW_WAVE6X4
+        #     }),
+        #     Model.PON: ('bm_main_pon.dtsi', {
+        #         'PON_2GB_GW_WAVE6X4': ModelConfig.PON_2GB_GW_WAVE6X4,
+        #         'PON_2GB_GW_WAVE700': ModelConfig.PON_2GB_GW_WAVE700,
+        #         'PON_1GB_GW_WAVE6X4': ModelConfig.PON_1GB_GW_WAVE6X4
+        #     }),
+        #     Model.CABLE: ('bm_main_docsis.dtsi', {
+        #         'CABLE_2GB_GW_WAVE700': ModelConfig.CABLE_2GB_GW_WAVE700,
+        #         'CABLE_1GB_MODEM': ModelConfig.CABLE_1GB_MODEM
+        #     })
+        # }
+        model_templates = {
+            Model.ETH: ('bm_main_eth.dtsi', self.get_model_configurations('ETH')),
+            Model.PON: ('bm_main_pon.dtsi', self.get_model_configurations('PON')),
+            Model.CABLE: ('bm_main_docsis.dtsi', self.get_model_configurations('CABLE'))
+        }
+
+        if model not in model_templates:
+            raise ValueError(f"Invalid model: {model}")
+
+        template_file, model_configs = model_templates[model]
+        return self.format_output(template_file, model_configs)
+
     def write_dtsi_model(self, model):
-        # Based on model, get output_file
         match model:
             case Model.ETH:
                 output_file = self.eth_file
-                text_tail = self.text_tail_eth
             case Model.PON:
                 output_file = self.pon_file
-                text_tail = self.text_tail_pon
             case Model.CABLE:
                 output_file = self.cable_file
-                text_tail = self.text_tail_cable
             case _:
                 raise ValueError(f"Invalid model: {model}")
-        
+
         with open(output_file, 'w', newline='\n') as f:
-            f.write(self.text_head.format(year=datetime.now().year, bm_config_version=self.BMConfig.revision))
-
-            for name, value in ModelConfig.iterate():
-                if ModelConfig.model(value) == model:
-                    f.write(self.model_config_str[value] + '\n')
-                    self.write_dtsi_model_pool(f, self.BMConfig.bm_config[value].pool_df)
-                    self.write_dtsi_model_policy(f, self.BMConfig.bm_config[value].policy_df)
-                    self.write_dtsi_model_genpool(f, self.BMConfig.bm_config[value].genpool_df)
-                    self.write_dtsi_model_linux_cma(f, self.BMConfig.bm_config[value].linuxcma_df)
-
-            f.write(text_tail)                  
+            f.write(self.generate_model_config_text(model))
 
     def write_dtsi(self):
+        self.populate_model_config_test()
+
         for name, value in Model.iterate():
             self.write_dtsi_model(value)
