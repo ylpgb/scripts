@@ -896,6 +896,13 @@ class BMConfigDTSIWriter:
         &lpid_config {
         	mxl,wan-mode = <LPID_WAN_DOCSIS>;
         };
+
+        #if defined(CONFIG_DDR_1GB)
+        &ppv4 {
+        	num-sessions = <32768>; /* 32K */
+        	dma_nioc_sz = <0x1368000>; /* 19MB from rw_pool - depend on num-sessions param */
+        };
+        #endif
         
         #else
         #error "Only one bm_main model dtsi can be included"
