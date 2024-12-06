@@ -48,26 +48,16 @@ class ModelConfig:
                 yield name, value
 
     @classmethod
-    def is_first_model_config(cls, config):
-        return (config == cls.ETH_2GB_GW_WAVE6X4 or 
-                config == cls.PON_2GB_GW_WAVE6X4 or 
-                config == cls.CABLE_2GB_GW_WAVE700)
-
-    @classmethod
-    def is_last_model_config(cls, config):
-        return (config == cls.ETH_1GB_GW_WAVE6X4 or 
-                config == cls.PON_1GB_GW_WAVE6X4 or 
-                config == cls.CABLE_1GB_MODEM)
-
-    @classmethod
     def model(cls, config):
-        match config:
-            case cls.ETH_2GB_GW_WAVE6X4 | cls.ETH_2GB_GW_WAVE700 | cls.ETH_1GB_GW_WAVE6X4:
+        if isinstance(config, str):
+            if config.startswith("ETH"):
                 return Model.ETH
-            case cls.PON_2GB_GW_WAVE6X4 | cls.PON_2GB_GW_WAVE700 | cls.PON_1GB_GW_WAVE6X4:
+            elif config.startswith("PON"):
                 return Model.PON
-            case cls.CABLE_2GB_GW_WAVE700 | cls.CABLE_1GB_MODEM:
+            elif config.startswith("CABLE"):
                 return Model.CABLE
+        else:
+            raise ValueError("Invalid config type")
 
     @classmethod
     def config_cnt(cls):
