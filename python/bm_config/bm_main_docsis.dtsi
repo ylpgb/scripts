@@ -48,7 +48,6 @@
  ***************************************************/
 
 {CABLE_2GB_GW_WAVE700}
-
 #else
 #error "Only WAVE700 is supported with DOCSIS GW"
 #endif /* CONFIG_WAVE_700 */
@@ -64,7 +63,6 @@
  **************************************************/
 
 {CABLE_1GB_MODEM}
-
 #else
 #error "Only 1GB DDR is supported with MODEM"
 #endif /* CONFIG_DDR_1GB */

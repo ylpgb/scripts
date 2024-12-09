@@ -48,14 +48,12 @@
  *****************************************************/
 
 {ETH_2GB_GW_WAVE6X4}
-
 #elif defined(CONFIG_WAVE_700)
 /*****************************************************
  * EthWAN_DSL + GW + 2GB DDR + WAVE700
  *****************************************************/
 
 {ETH_2GB_GW_WAVE700}
-
 #else
 #error "Please include dtsi file for WAVE configuration"
 #endif /* CONFIG_WAVE_6X4 */
@@ -65,9 +63,8 @@
 /****************************************************
  * EthWAN_DSL + GW + 1GB DDR + WAVE6xx
  ****************************************************/
- 
-{ETH_1GB_GW_WAVE6X4}
 
+{ETH_1GB_GW_WAVE6X4}
 #else
 #error "WAVE700 is not supported with 1GB DDR"
 #endif /* CONFIG_WAVE_6X4 */

@@ -26,11 +26,14 @@ def main():
         print(f"Selected file: {file_path}")
         
     # Using the context manager to ensure the class cleanup function is called
-    with BMConfig(file_path, search_start_cell=True) as bm_config: 
-        bm_config.get_bm_config()
-        # bm_config.dump_config()
-        bm_config_writer = BMConfigDTSIWriter(bm_config)
-        bm_config_writer.write_dtsi()
+    with BMConfig(file_path, search_start_cell=True) as bm_config:
+        try:
+            bm_config.get_bm_config()
+            # bm_config.dump_config()
+            bm_config_writer = BMConfigDTSIWriter(bm_config)
+            bm_config_writer.write_dtsi()
+        except Exception as e:
+            print(f"Error to get bm config: {e}")
 
 if __name__ == "__main__":
     main()
