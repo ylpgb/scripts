@@ -248,34 +248,30 @@
 	};
 };
 
-&soc {
-	noc_pool: noc_pool {
-		compatible = "mxl,lgm-gen-pool";
+&noc_pool {
+	icc_pool: icc_pool {
+		size = <ICC_POOL_SIZE>;
+		perm = <NOC_RW_PERM>;
+	};
 
-		icc_pool: icc_pool {
-			size = <ICC_POOL_SIZE>;
-			perm = <NOC_RW_PERM>;
-		};
+	rw_pool: rw_pool {
+		size = <RW_POOL_SIZE>;
+		perm = <NOC_RW_PERM>;
+	};
 
-		rw_pool: rw_pool {
-			size = <RW_POOL_SIZE>;
-			perm = <NOC_RW_PERM>;
-		};
+	cpu_pool: cpu_pool {
+		size = <CPU_POOL_SIZE>;
+		perm = <NOC_RW_PERM>;
+	};
 
-		cpu_pool: cpu_pool {
-			size = <CPU_POOL_SIZE>;
-			perm = <NOC_RW_PERM>;
-		};
+	sys_pool: sys_pool {
+		size = <SYS_POOL_SIZE>;
+		perm = <NOC_RD_PERM>;
+	};
 
-		sys_pool: sys_pool {
-			size = <SYS_POOL_SIZE>;
-			perm = <NOC_RD_PERM>;
-		};
-
-		ro_pool: ro_pool {
-			size = <RO_POOL_SIZE>;
-			perm = <NOC_RD_PERM>;
-		};
+	ro_pool: ro_pool {
+		size = <RO_POOL_SIZE>;
+		perm = <NOC_RD_PERM>;
 	};
 };
 
