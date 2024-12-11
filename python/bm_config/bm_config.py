@@ -373,7 +373,7 @@ class BMConfig:
 
         for name, value in ModelConfig.iterate():
             bm_config = self.bm_config[value]
-            print(f"Model: {ModelConfig.model(value)}")
+            print(f"Model: {ModelConfig.model(name)}")
             print(f"Config: {name}")
             for df_name, df_value in DFType.iterate():
                 print(f"{df_name}:")
