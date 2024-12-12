@@ -20,6 +20,16 @@ import xlwings as xw
 import pandas as pd
 from dataclasses import dataclass, make_dataclass
 
+def create_value_to_name_map(cls):
+    return {v: k for k, v in vars(cls).items() if not k.startswith('_') and not callable(v)}
+
+def get_name(cls, value):
+    value_to_name = create_value_to_name_map(cls)
+    return value_to_name.get(value, "Unknown value")
+
+def get_value(cls, name):
+    return getattr(cls, name, "Unknown name")
+
 class Model:
     ETH = 1
     PON = 2
@@ -49,12 +59,14 @@ class ModelConfig:
 
     @classmethod
     def model(cls, config):
-        if isinstance(config, str):
-            if config.startswith("ETH"):
+        # check if config is a value
+        if isinstance(config, int):
+            name = get_name(cls, config)
+            if name.startswith("ETH"):
                 return Model.ETH
-            elif config.startswith("PON"):
+            elif name.startswith("PON"):
                 return Model.PON
-            elif config.startswith("CABLE"):
+            elif name.startswith("CABLE"):
                 return Model.CABLE
         else:
             raise ValueError("Invalid config type")
@@ -368,13 +380,18 @@ class BMConfig:
             # Append bm_config
             self.bm_config[value] = ModelBMConfig(**data_frames)
 
-    def dump_config(self):
+    def dump_config(self, config):
+        """Dump BM configuration"""
+
+        bm_config = self.bm_config[config]
+        print(f"Model: {get_name(Model, ModelConfig.model(config))}")
+        print(f"Config: {get_name(ModelConfig, config)}")
+        for df_name, df_value in DFType.iterate():
+            print(f"{df_name}:")
+            print(getattr(bm_config, df_name.lower() + '_df'))
+
+    def dump_configs(self):
         """Dump BM configuration"""
 
         for name, value in ModelConfig.iterate():
-            bm_config = self.bm_config[value]
-            print(f"Model: {ModelConfig.model(name)}")
-            print(f"Config: {name}")
-            for df_name, df_value in DFType.iterate():
-                print(f"{df_name}:")
-                print(getattr(bm_config, df_name.lower() + '_df'))
+            self.dump_config(value)

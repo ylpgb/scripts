@@ -29,7 +29,7 @@ def main():
     with BMConfig(file_path, search_start_cell=True) as bm_config:
         try:
             bm_config.get_bm_config()
-            # bm_config.dump_config()
+            bm_config.dump_configs()
             bm_config_writer = BMConfigDTSIWriter(bm_config)
             bm_config_writer.write_dtsi()
         except Exception as e:
